@@ -1,0 +1,259 @@
+/* styles.css - Indicadores visuais para a extensão Instagram v2.0 */
+
+/* Classes aplicadas ao body durante processamento */
+.igaf-processing {
+    position: relative;
+}
+
+.igaf-processing::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #833ab4, #fd1d1d, #fcb045);
+    animation: loading-bar 2s ease-in-out infinite;
+    z-index: 10000;
+}
+
+@keyframes loading-bar {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(0); }
+    100% { transform: translateX(100%); }
+}
+
+/* Indicador de sucesso */
+.igaf-success::after {
+    content: '✓';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 80px;
+    color: #10b981;
+    animation: success-pulse 0.6s ease-out;
+    pointer-events: none;
+    z-index: 10000;
+}
+
+@keyframes success-pulse {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.5);
+    }
+    50% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.2);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* Indicador de erro */
+.igaf-error::after {
+    content: '✕';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 80px;
+    color: #ef4444;
+    animation: error-shake 0.6s ease-out;
+    pointer-events: none;
+    z-index: 10000;
+}
+
+@keyframes error-shake {
+    0%, 100% {
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+    25% {
+        transform: translate(-48%, -50%) rotate(-5deg);
+    }
+    75% {
+        transform: translate(-52%, -50%) rotate(5deg);
+    }
+}
+
+/* Overlay durante processamento */
+.igaf-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(2px);
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.igaf-processing .igaf-overlay {
+    opacity: 1;
+}
+
+/* Status widget flutuante */
+.igaf-status-widget {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(26, 26, 26, 0.95);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    z-index: 10001;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.igaf-status-widget.active {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.igaf-status-widget .status-text {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.igaf-status-widget .status-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Highlight no botão durante hover simulado */
+.igaf-simulated-hover {
+    position: relative;
+}
+
+.igaf-simulated-hover::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    border: 2px solid #fd1d1d;
+    border-radius: 8px;
+    opacity: 0;
+    animation: hover-pulse 1s ease-out;
+    pointer-events: none;
+}
+
+@keyframes hover-pulse {
+    0% { opacity: 0; transform: scale(0.95); }
+    50% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.05); }
+}
+
+/* Animação de scroll */
+.igaf-scrolling {
+    scroll-behavior: smooth;
+}
+
+/* Toast notifications */
+.igaf-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: rgba(26, 26, 26, 0.95);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10002;
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.igaf-toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.igaf-toast.success {
+    background: rgba(16, 185, 129, 0.95);
+}
+
+.igaf-toast.error {
+    background: rgba(239, 68, 68, 0.95);
+}
+
+.igaf-toast.warning {
+    background: rgba(251, 191, 36, 0.95);
+}
+
+/* Modo escuro automático */
+@media (prefers-color-scheme: dark) {
+    .igaf-status-widget,
+    .igaf-toast {
+        background: rgba(26, 26, 26, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .igaf-status-widget {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+        font-size: 13px;
+    }
+    
+    .igaf-toast {
+        width: calc(100% - 40px);
+        left: 20px;
+        transform: translateX(0) translateY(-100px);
+    }
+    
+    .igaf-toast.show {
+        transform: translateX(0) translateY(0);
+    }
+}
+
+/* Debug mode - adicione ?debug=true na URL para ativar */
+.igaf-debug-mode .igaf-status-widget {
+    background: rgba(255, 0, 0, 0.1);
+    border: 2px solid red;
+}
+
+.igaf-debug-mode button {
+    outline: 2px dashed orange !important;
+}
+
+/* Acessibilidade */
+@media (prefers-reduced-motion: reduce) {
+    .igaf-processing::before,
+    .igaf-success::after,
+    .igaf-error::after,
+    .igaf-simulated-hover::before {
+        animation: none;
+    }
+    
+    .igaf-status-widget,
+    .igaf-toast {
+        transition: none;
+    }
+}
