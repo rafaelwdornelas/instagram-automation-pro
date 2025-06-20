@@ -151,7 +151,8 @@ async function updateStatus() {
     elements.currentIndex.textContent = response.currentIndex || 0;
     elements.totalCount.textContent = response.currentList || 0;
     elements.successCount.textContent = response.sessionStats?.successful || 0;
-    elements.failedCount.textContent = response.sessionStats?.failed || 0;
+    elements.failedCount.textContent =
+      response.sessionStats?.failed || response.failedUsers || 0;
 
     // Atualiza barra de progresso
     const progress =
@@ -159,6 +160,9 @@ async function updateStatus() {
         ? (response.currentIndex / response.currentList) * 100
         : 0;
     elements.progressBar.style.width = `${progress}%`;
+
+    // Atualiza indicadores de limites
+    updateLimitIndicators(response.limits);
 
     // Atualiza timer de pausa
     if (isPaused && response.pauseEndTime && response.pauseReason) {
@@ -184,6 +188,90 @@ async function updateStatus() {
     }
   } catch (error) {
     console.error("Erro ao atualizar status:", error);
+  }
+}
+
+/**
+ * Atualiza indicadores de limites
+ */
+function updateLimitIndicators(limits) {
+  if (!limits) return;
+
+  // Adiciona ou atualiza seção de limites se não existir
+  let limitsSection = document.getElementById("limitsSection");
+  if (!limitsSection) {
+    // Cria seção de limites após a barra de progresso
+    const progressBar = elements.progressBar.parentElement;
+    limitsSection = document.createElement("div");
+    limitsSection.id = "limitsSection";
+    limitsSection.style.cssText = `
+      margin-top: 15px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      font-size: 12px;
+    `;
+    limitsSection.innerHTML = `
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span style="color: #888;">Limite Diário:</span>
+        <span id="dailyLimitText" style="font-weight: 600;"></span>
+      </div>
+      <div id="dailyLimitBar" style="background: #0a0a0a; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 12px;">
+        <div id="dailyLimitFill" style="height: 100%; background: linear-gradient(90deg, #10b981, #fbbf24); transition: width 0.5s ease;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+        <span style="color: #888;">Limite Horário:</span>
+        <span id="hourlyLimitText" style="font-weight: 600;"></span>
+      </div>
+      <div id="hourlyLimitBar" style="background: #0a0a0a; height: 6px; border-radius: 3px; overflow: hidden;">
+        <div id="hourlyLimitFill" style="height: 100%; background: linear-gradient(90deg, #10b981, #ef4444); transition: width 0.5s ease;"></div>
+      </div>
+    `;
+    progressBar.parentElement.appendChild(limitsSection);
+  }
+
+  // Atualiza valores diários
+  if (limits.daily) {
+    const dailyText = document.getElementById("dailyLimitText");
+    const dailyFill = document.getElementById("dailyLimitFill");
+    const dailyPercent = (limits.daily.used / limits.daily.limit) * 100;
+
+    dailyText.textContent = `${limits.daily.used}/${limits.daily.limit}`;
+    dailyFill.style.width = `${Math.min(dailyPercent, 100)}%`;
+
+    // Muda cor se estiver próximo do limite
+    if (dailyPercent >= 90) {
+      dailyText.style.color = "#ef4444";
+      dailyFill.style.background = "#ef4444";
+    } else if (dailyPercent >= 70) {
+      dailyText.style.color = "#fbbf24";
+      dailyFill.style.background = "linear-gradient(90deg, #fbbf24, #ef4444)";
+    } else {
+      dailyText.style.color = "#10b981";
+      dailyFill.style.background = "linear-gradient(90deg, #10b981, #fbbf24)";
+    }
+  }
+
+  // Atualiza valores horários
+  if (limits.hourly) {
+    const hourlyText = document.getElementById("hourlyLimitText");
+    const hourlyFill = document.getElementById("hourlyLimitFill");
+    const hourlyPercent = (limits.hourly.used / limits.hourly.limit) * 100;
+
+    hourlyText.textContent = `${limits.hourly.used}/${limits.hourly.limit}`;
+    hourlyFill.style.width = `${Math.min(hourlyPercent, 100)}%`;
+
+    // Muda cor se estiver próximo do limite
+    if (hourlyPercent >= 90) {
+      hourlyText.style.color = "#ef4444";
+      hourlyFill.style.background = "#ef4444";
+    } else if (hourlyPercent >= 70) {
+      hourlyText.style.color = "#fbbf24";
+      hourlyFill.style.background = "linear-gradient(90deg, #fbbf24, #ef4444)";
+    } else {
+      hourlyText.style.color = "#10b981";
+      hourlyFill.style.background = "linear-gradient(90deg, #10b981, #fbbf24)";
+    }
   }
 }
 
@@ -530,7 +618,7 @@ async function saveSettings() {
       min: parseInt(elements.actionDelayMin.value) * 1000,
       max: parseInt(elements.actionDelayMax.value) * 1000,
     },
-    scrollDelay: { min: 1000, max: 2000 },
+    scrollDelay: { min: 2000, max: 4000 },
     actionsPerBatch: parseInt(elements.actionsPerBatch.value),
     batchPause: {
       min: parseInt(elements.batchPauseMin.value) * 60000,
@@ -540,8 +628,8 @@ async function saveSettings() {
     hourlyLimit: Math.floor(parseInt(elements.dailyLimit.value) / 8),
     skipPrivateProfiles: elements.skipPrivate.checked,
     skipVerifiedProfiles: elements.skipVerified.checked,
-    retryFailedUsers: true,
-    maxRetries: 2,
+    retryFailedUsers: false,
+    maxRetries: 1,
     randomizeOrder: elements.randomizeOrder.checked,
     simulateHumanBehavior: elements.simulateHuman.checked,
     randomClicks: elements.simulateHuman.checked,
@@ -599,6 +687,15 @@ async function loadReport() {
                             <div class="stat-label">Duração</div>
                         </div>
                     </div>
+                    ${
+                      report.pauseReason
+                        ? `
+                    <div style="margin-top: 15px; padding: 10px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px;">
+                        <span style="color: #fbbf24; font-size: 13px;">⚠️ ${report.pauseReason}</span>
+                    </div>
+                    `
+                        : ""
+                    }
                 </div>
                 
                 <h4 style="margin-top: 20px;">Detalhes</h4>
@@ -668,6 +765,22 @@ function generateReportDetails(report) {
       if (user.status === "success") {
         html += `<div style="margin: 5px 0;">@${user.username} - ${user.action}</div>`;
       }
+    });
+    html += "</div>";
+  }
+
+  // Usuários pulados
+  const skippedUsers = report.processedUsers.filter(
+    (u) => u.status === "skipped"
+  );
+  if (skippedUsers.length > 0) {
+    html += '<h5 style="margin: 15px 0 10px;">⏭️ Pulados</h5>';
+    html +=
+      '<div style="background: #1a1a1a; padding: 10px; border-radius: 8px;">';
+    skippedUsers.forEach((user) => {
+      html += `<div style="margin: 5px 0;">@${user.username} - ${
+        user.reason || "N/A"
+      }</div>`;
     });
     html += "</div>";
   }
@@ -744,7 +857,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "statusUpdate") {
     updateStatus();
   } else if (message.type === "automationComplete") {
-    alert("Automação concluída! Verifique o relatório para mais detalhes.");
+    if (
+      message.report &&
+      message.report.pauseReason &&
+      message.report.pauseReason.includes("Limite")
+    ) {
+      alert(
+        `Automação pausada: ${message.report.pauseReason}. Verifique o relatório para mais detalhes.`
+      );
+    } else {
+      alert("Automação concluída! Verifique o relatório para mais detalhes.");
+    }
     switchTab("reports");
     loadReport();
   }

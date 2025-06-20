@@ -20,6 +20,15 @@ let automationState = {
     failed: 0,
     skipped: 0,
   },
+  // Novos contadores para limites
+  dailyStats: {
+    date: new Date().toDateString(),
+    count: 0,
+  },
+  hourlyStats: {
+    hour: new Date().getHours(),
+    count: 0,
+  },
 };
 
 // --- Configurações Avançadas (MODO SEGURO) ---
@@ -61,6 +70,8 @@ const STORAGE_KEYS = {
   LISTS: "userLists",
   PROGRESS: "automationProgress",
   STATS: "automationStats",
+  DAILY_STATS: "dailyStats",
+  HOURLY_STATS: "hourlyStats",
 };
 
 // --- Helper Functions ---
@@ -70,6 +81,119 @@ const STORAGE_KEYS = {
  */
 function getRandomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Carrega estatísticas diárias e horárias
+ */
+async function loadStats() {
+  try {
+    const data = await chrome.storage.local.get([
+      STORAGE_KEYS.DAILY_STATS,
+      STORAGE_KEYS.HOURLY_STATS,
+    ]);
+
+    const today = new Date().toDateString();
+    const currentHour = new Date().getHours();
+
+    // Verifica estatísticas diárias
+    if (data[STORAGE_KEYS.DAILY_STATS]) {
+      if (data[STORAGE_KEYS.DAILY_STATS].date === today) {
+        automationState.dailyStats = data[STORAGE_KEYS.DAILY_STATS];
+      } else {
+        // Reset para novo dia
+        automationState.dailyStats = { date: today, count: 0 };
+      }
+    }
+
+    // Verifica estatísticas horárias
+    if (data[STORAGE_KEYS.HOURLY_STATS]) {
+      if (data[STORAGE_KEYS.HOURLY_STATS].hour === currentHour) {
+        automationState.hourlyStats = data[STORAGE_KEYS.HOURLY_STATS];
+      } else {
+        // Reset para nova hora
+        automationState.hourlyStats = { hour: currentHour, count: 0 };
+      }
+    }
+
+    console.log("Stats carregados:", {
+      daily: automationState.dailyStats,
+      hourly: automationState.hourlyStats,
+    });
+  } catch (error) {
+    console.error("Erro ao carregar stats:", error);
+  }
+}
+
+/**
+ * Salva estatísticas diárias e horárias
+ */
+async function saveStats() {
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.DAILY_STATS]: automationState.dailyStats,
+      [STORAGE_KEYS.HOURLY_STATS]: automationState.hourlyStats,
+    });
+  } catch (error) {
+    console.error("Erro ao salvar stats:", error);
+  }
+}
+
+/**
+ * Verifica se pode executar ação baseado nos limites
+ */
+function checkLimits() {
+  // Atualiza hora/dia se mudou
+  const today = new Date().toDateString();
+  const currentHour = new Date().getHours();
+
+  if (automationState.dailyStats.date !== today) {
+    automationState.dailyStats = { date: today, count: 0 };
+  }
+
+  if (automationState.hourlyStats.hour !== currentHour) {
+    automationState.hourlyStats = { hour: currentHour, count: 0 };
+  }
+
+  // Verifica limite diário
+  if (automationState.dailyStats.count >= settings.dailyLimit) {
+    console.log(
+      `Limite diário atingido: ${automationState.dailyStats.count}/${settings.dailyLimit}`
+    );
+    return {
+      canProceed: false,
+      reason: `Limite diário atingido (${settings.dailyLimit} ações)`,
+      type: "daily",
+    };
+  }
+
+  // Verifica limite horário
+  if (automationState.hourlyStats.count >= settings.hourlyLimit) {
+    console.log(
+      `Limite horário atingido: ${automationState.hourlyStats.count}/${settings.hourlyLimit}`
+    );
+    return {
+      canProceed: false,
+      reason: `Limite horário atingido (${settings.hourlyLimit} ações por hora)`,
+      type: "hourly",
+    };
+  }
+
+  return { canProceed: true };
+}
+
+/**
+ * Incrementa contadores de limite
+ */
+async function incrementLimitCounters() {
+  automationState.dailyStats.count++;
+  automationState.hourlyStats.count++;
+  await saveStats();
+
+  console.log("Limites atualizados:", {
+    daily: `${automationState.dailyStats.count}/${settings.dailyLimit}`,
+    hourly: `${automationState.hourlyStats.count}/${settings.hourlyLimit}`,
+  });
 }
 
 /**
@@ -146,6 +270,9 @@ async function loadSettingsAndState() {
       }
     }
 
+    // Carrega estatísticas de limites
+    await loadStats();
+
     console.log("Estado carregado:", automationState);
   } catch (error) {
     console.error("Erro ao carregar configurações:", error);
@@ -181,6 +308,38 @@ async function navigateToProfile(tabId, username) {
 async function processNextUser() {
   if (!automationState.isActive || automationState.isPaused) {
     console.log("Automação pausada ou inativa");
+    return;
+  }
+
+  // Verifica limites antes de processar
+  const limitCheck = checkLimits();
+  if (!limitCheck.canProceed) {
+    console.log("Limite atingido:", limitCheck.reason);
+
+    if (limitCheck.type === "hourly") {
+      // Pausa até a próxima hora
+      const now = new Date();
+      const nextHour = new Date(now);
+      nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+      const pauseUntil = nextHour.getTime();
+
+      automationState.isPaused = true;
+      automationState.pauseReason = limitCheck.reason;
+      automationState.pauseEndTime = pauseUntil;
+
+      sendStatusUpdate();
+
+      // Agenda retomada na próxima hora
+      const pauseDuration = pauseUntil - now.getTime();
+      chrome.alarms.create("resumeFromPause", {
+        delayInMinutes: pauseDuration / 60000,
+      });
+    } else {
+      // Limite diário - para completamente
+      automationState.pauseReason = limitCheck.reason;
+      await completeAutomation();
+    }
+
     return;
   }
 
@@ -220,6 +379,9 @@ async function processNextUser() {
           skipPrivate: settings.skipPrivateProfiles,
           skipVerified: settings.skipVerifiedProfiles,
           simulateHuman: settings.simulateHumanBehavior,
+          randomClicks: settings.randomClicks,
+          randomScrolls: settings.randomScrolls,
+          scrollDelay: settings.scrollDelay,
         },
       }
     );
@@ -235,7 +397,7 @@ async function processNextUser() {
 /**
  * Lida com a resposta de uma ação
  */
-function handleActionResponse(username, response) {
+async function handleActionResponse(username, response) {
   if (!response) {
     handleActionError(username, new Error("Sem resposta do content script"));
     return;
@@ -252,6 +414,9 @@ function handleActionResponse(username, response) {
         status: "success",
       });
       automationState.sessionStats.successful++;
+
+      // Incrementa contadores de limite
+      await incrementLimitCounters();
       break;
 
     case "skipped":
@@ -277,6 +442,20 @@ function handleActionResponse(username, response) {
 
     case "error":
       handleActionError(username, new Error(response.message));
+      return;
+
+    case "profile_not_found":
+      automationState.failedUsers.push({
+        username,
+        reason: "perfil_nao_encontrado",
+        timestamp: Date.now(),
+      });
+      automationState.sessionStats.failed++;
+      automationState.sessionStats.totalProcessed++;
+      automationState.currentIndex++;
+      saveState();
+      scheduleNextAction();
+      sendStatusUpdate();
       return;
   }
 
@@ -335,10 +514,17 @@ function handleActionError(username, error) {
     // Adiciona de volta à lista para tentar novamente mais tarde
     automationState.currentList.push(username);
   } else {
-    automationState.failedUsers.push(failedUser);
-    automationState.sessionStats.failed++;
+    // Só adiciona aos failedUsers se ainda não estiver lá
+    const alreadyFailed = automationState.failedUsers.find(
+      (u) => u.username === username
+    );
+    if (!alreadyFailed) {
+      automationState.failedUsers.push(failedUser);
+      automationState.sessionStats.failed++;
+    }
   }
 
+  automationState.sessionStats.totalProcessed++;
   automationState.currentIndex++;
   scheduleNextAction();
 }
@@ -413,6 +599,9 @@ async function completeAutomation() {
     skipped: automationState.sessionStats.skipped,
     processedUsers: automationState.processedUsers,
     failedUsers: automationState.failedUsers,
+    dailyUsed: automationState.dailyStats.count,
+    dailyLimit: settings.dailyLimit,
+    pauseReason: automationState.pauseReason,
   };
 
   // Salva relatório
@@ -452,6 +641,9 @@ async function startAutomation(data) {
     console.error("Lista de usuários vazia");
     return;
   }
+
+  // Carrega estatísticas atualizadas
+  await loadStats();
 
   // Configura estado
   automationState.isActive = true;
@@ -537,6 +729,18 @@ function sendStatusUpdate() {
       successful: automationState.sessionStats.successful,
       failed: automationState.sessionStats.failed,
       totalProcessed: automationState.sessionStats.totalProcessed,
+    },
+    limits: {
+      daily: {
+        used: automationState.dailyStats.count,
+        limit: settings.dailyLimit,
+        remaining: settings.dailyLimit - automationState.dailyStats.count,
+      },
+      hourly: {
+        used: automationState.hourlyStats.count,
+        limit: settings.hourlyLimit,
+        remaining: settings.hourlyLimit - automationState.hourlyStats.count,
+      },
     },
   };
 
@@ -632,6 +836,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               automationState.isActive = true;
               automationState.actionType = request.actionType || "follow";
 
+              // Carrega estatísticas
+              await loadStats();
+
               console.log(
                 `Retomando do usuário ${automationState.currentIndex + 1} de ${
                   automationState.currentList.length
@@ -670,6 +877,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         processedUsers: automationState.processedUsers.length,
         failedUsers: automationState.failedUsers.length,
         settings: settings,
+        limits: {
+          daily: {
+            used: automationState.dailyStats.count,
+            limit: settings.dailyLimit,
+            remaining: settings.dailyLimit - automationState.dailyStats.count,
+          },
+          hourly: {
+            used: automationState.hourlyStats.count,
+            limit: settings.hourlyLimit,
+            remaining: settings.hourlyLimit - automationState.hourlyStats.count,
+          },
+        },
       });
       break;
 
@@ -745,4 +964,4 @@ setInterval(() => {
   }
 }, 5000); // Verifica a cada 5 segundos
 
-console.log("Background script carregado - Versão 2.0");
+console.log("Background script carregado - Versão 2.0 Enhanced");

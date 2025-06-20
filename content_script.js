@@ -32,6 +32,12 @@ const SELECTORS = {
   followersCount: "ul > li:nth-child(2) span",
   followingCount: "ul > li:nth-child(3) span",
 
+  // Botões
+  followButton:
+    'button:has(div:contains("Follow")), button:has(div:contains("Seguir"))',
+  followingButton:
+    'button:has(div:contains("Following")), button:has(div:contains("Seguindo"))',
+
   // Modais
   unfollowModal: 'div[role="dialog"]',
   actionBlockedModal: 'div[role="dialog"]',
@@ -39,6 +45,12 @@ const SELECTORS = {
   // Navegação
   backButton: 'svg[aria-label="Back"]',
   homeButton: 'svg[aria-label="Home"]',
+
+  // Posts e interações
+  postGrid: "article",
+  likeButton: 'svg[aria-label*="Like"], svg[aria-label*="Curtir"]',
+  commentButton: 'svg[aria-label*="Comment"], svg[aria-label*="Comentar"]',
+  shareButton: 'svg[aria-label*="Share"], svg[aria-label*="Compartilhar"]',
 };
 
 // --- Estado ---
@@ -136,6 +148,87 @@ function findActionButton(actionType) {
 }
 
 /**
+ * Verifica se o perfil existe (não é 404)
+ */
+function checkProfileExists() {
+  // Verifica se está na página de erro 404
+  const pageTitle = document.title.toLowerCase();
+  const bodyText = document.body.innerText.toLowerCase();
+
+  if (
+    pageTitle.includes("page not found") ||
+    pageTitle.includes("página não encontrada") ||
+    bodyText.includes("sorry, this page isn't available") ||
+    bodyText.includes("esta página não está disponível") ||
+    bodyText.includes("a página que você está procurando não existe") ||
+    document
+      .querySelector("h2")
+      ?.textContent?.includes("Sorry, this page isn't available")
+  ) {
+    console.log("Perfil não encontrado (404)");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Detecta se a conta é privada com mais precisão
+ */
+function isPrivateAccount() {
+  // Procura por vários indicadores de conta privada
+  const indicators = [
+    // Textos em inglês
+    "this account is private",
+    "follow to see their photos and videos",
+    "follow this account to see their photos and videos",
+
+    // Textos em português
+    "esta conta é privada",
+    "conta privada",
+    "siga para ver as fotos e vídeos",
+    "siga esta conta para ver suas fotos e vídeos",
+
+    // Procura pelo ícone de cadeado
+    'svg[aria-label="Private"]',
+    'svg[aria-label="Privada"]',
+  ];
+
+  // Verifica textos
+  const bodyText = document.body.innerText.toLowerCase();
+  for (const indicator of indicators) {
+    if (
+      typeof indicator === "string" &&
+      bodyText.includes(indicator.toLowerCase())
+    ) {
+      console.log(`Conta privada detectada: "${indicator}"`);
+      return true;
+    }
+  }
+
+  // Verifica elementos específicos
+  const privateIcon = document.querySelector(
+    'svg[aria-label="Private"], svg[aria-label="Privada"]'
+  );
+  if (privateIcon) {
+    console.log("Conta privada detectada pelo ícone");
+    return true;
+  }
+
+  // Verifica se há o texto "This account is private" em h2
+  const h2Elements = document.querySelectorAll("h2");
+  for (const h2 of h2Elements) {
+    const text = h2.textContent.toLowerCase();
+    if (text.includes("private") || text.includes("privada")) {
+      console.log("Conta privada detectada em h2");
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extrai informações do perfil
  */
 function getProfileInfo() {
@@ -146,7 +239,14 @@ function getProfileInfo() {
     posts: 0,
     followers: 0,
     following: 0,
+    exists: true,
   };
+
+  // Primeiro verifica se o perfil existe
+  if (!checkProfileExists()) {
+    info.exists = false;
+    return info;
+  }
 
   // Username
   const usernameElement = document.querySelector(SELECTORS.username);
@@ -154,12 +254,8 @@ function getProfileInfo() {
     info.username = usernameElement.textContent.trim();
   }
 
-  // Conta privada - procura texto em toda a página
-  const allText = document.body.innerText;
-  info.isPrivate =
-    allText.includes("This account is private") ||
-    allText.includes("Esta conta é privada") ||
-    allText.includes("Conta privada");
+  // Conta privada - usa a nova função
+  info.isPrivate = isPrivateAccount();
 
   // Verificado
   info.isVerified = !!document.querySelector(SELECTORS.verifiedBadge);
@@ -184,26 +280,144 @@ function getProfileInfo() {
 }
 
 /**
- * Simula comportamento humano
+ * Gera delay aleatório
  */
-async function simulateHumanBehavior() {
-  // Movimento aleatório do mouse
-  const event = new MouseEvent("mousemove", {
-    view: window,
-    bubbles: true,
-    cancelable: true,
-    clientX: Math.random() * window.innerWidth,
-    clientY: Math.random() * window.innerHeight,
-  });
-  document.dispatchEvent(event);
+function getRandomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-  // Scroll aleatório pequeno
-  if (Math.random() > 0.7) {
+/**
+ * Simula movimento natural do mouse
+ */
+async function simulateMouseMovement() {
+  const targetX = Math.random() * window.innerWidth;
+  const targetY = Math.random() * window.innerHeight;
+
+  // Simula movimento suave
+  const steps = 5;
+  const currentX = window.innerWidth / 2;
+  const currentY = window.innerHeight / 2;
+
+  for (let i = 0; i <= steps; i++) {
+    const progress = i / steps;
+    const x = currentX + (targetX - currentX) * progress;
+    const y = currentY + (targetY - currentY) * progress;
+
+    const event = new MouseEvent("mousemove", {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+    });
+    document.dispatchEvent(event);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/**
+ * Simula cliques aleatórios em elementos não interativos
+ */
+async function performRandomClicks(count = 2) {
+  const safeElements = ['div[role="main"]', "header", "section", "article"];
+
+  for (let i = 0; i < count; i++) {
+    const elements = document.querySelectorAll(safeElements.join(", "));
+    if (elements.length > 0) {
+      const randomElement =
+        elements[Math.floor(Math.random() * elements.length)];
+      const rect = randomElement.getBoundingClientRect();
+
+      if (rect.width > 0 && rect.height > 0) {
+        const x = rect.left + Math.random() * rect.width;
+        const y = rect.top + Math.random() * rect.height;
+
+        const clickEvent = new MouseEvent("click", {
+          view: window,
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+        });
+
+        randomElement.dispatchEvent(clickEvent);
+        console.log("Clique aleatório realizado");
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, getRandomDelay(500, 1500))
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Simula scrolls aleatórios
+ */
+async function performRandomScrolls(settings) {
+  const scrollCount = Math.floor(Math.random() * 3) + 1; // 1-3 scrolls
+
+  for (let i = 0; i < scrollCount; i++) {
+    const direction = Math.random() > 0.5 ? 1 : -1;
+    const distance = Math.random() * 200 + 50; // 50-250 pixels
+
     window.scrollBy({
-      top: Math.random() * 100 - 50,
+      top: direction * distance,
       behavior: "smooth",
     });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    console.log(`Scroll ${direction > 0 ? "down" : "up"} ${distance}px`);
+
+    // Aguarda usando o scrollDelay configurado
+    if (settings && settings.scrollDelay) {
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          getRandomDelay(settings.scrollDelay.min, settings.scrollDelay.max)
+        )
+      );
+    } else {
+      await new Promise((resolve) =>
+        setTimeout(resolve, getRandomDelay(1000, 2000))
+      );
+    }
+  }
+
+  // Às vezes volta ao topo
+  if (Math.random() > 0.7) {
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+    console.log("Voltou ao topo da página");
+  }
+}
+
+/**
+ * Simula comportamento humano completo
+ */
+async function simulateHumanBehavior(settings) {
+  console.log("Simulando comportamento humano...");
+
+  // Movimento do mouse
+  await simulateMouseMovement();
+
+  // Cliques aleatórios se habilitado
+  if (settings && settings.randomClicks && Math.random() > 0.5) {
+    await performRandomClicks(1);
+  }
+
+  // Scrolls aleatórios se habilitado
+  if (settings && settings.randomScrolls && Math.random() > 0.3) {
+    await performRandomScrolls(settings);
+  }
+
+  // Às vezes pausa como se estivesse lendo
+  if (Math.random() > 0.6) {
+    const readingTime = getRandomDelay(2000, 4000);
+    console.log(`Pausando ${readingTime}ms como se estivesse lendo...`);
+    await new Promise((resolve) => setTimeout(resolve, readingTime));
   }
 
   // Delay adicional aleatório
@@ -249,8 +463,17 @@ async function performAction(actionType, username, settings) {
   isProcessing = true;
 
   try {
+    // Aguarda um momento para a página carregar completamente
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Obtém informações do perfil
     const profileInfo = getProfileInfo();
+
+    // Verifica se o perfil existe
+    if (!profileInfo.exists) {
+      console.log("Perfil não encontrado (404)");
+      return { status: "profile_not_found", message: "Perfil não encontrado" };
+    }
 
     // Validações
     if (settings.skipPrivate && profileInfo.isPrivate) {
@@ -265,7 +488,7 @@ async function performAction(actionType, username, settings) {
 
     // Simula comportamento humano se configurado
     if (settings.simulateHuman) {
-      await simulateHumanBehavior();
+      await simulateHumanBehavior(settings);
     }
 
     // Encontra botão de ação
@@ -287,6 +510,17 @@ async function performAction(actionType, username, settings) {
 
       return { status: "error", message: "Botão de ação não encontrado" };
     }
+
+    // Hover no botão antes de clicar (comportamento humano)
+    const hoverEvent = new MouseEvent("mouseenter", {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+    });
+    actionButton.dispatchEvent(hoverEvent);
+    await new Promise((resolve) =>
+      setTimeout(resolve, getRandomDelay(200, 500))
+    );
 
     // Clica no botão
     actionButton.click();
@@ -436,6 +670,16 @@ function createStatusWidget() {
                     <span class="igaf-stat-label" style="font-size: 11px; opacity: 0.7;">Total</span>
                 </div>
             </div>
+            <div class="igaf-limits" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); display: none;">
+                <div style="font-size: 12px; margin-bottom: 8px;">
+                    <span style="opacity: 0.7;">Limite Diário:</span>
+                    <span id="igaf-daily-limit" style="float: right;">0/50</span>
+                </div>
+                <div style="font-size: 12px;">
+                    <span style="opacity: 0.7;">Limite Horário:</span>
+                    <span id="igaf-hourly-limit" style="float: right;">0/8</span>
+                </div>
+            </div>
         </div>
     `;
 
@@ -519,6 +763,24 @@ function updateStatusWidget(status) {
       status.stats.failed || 0;
     document.getElementById("igaf-total").textContent =
       status.stats.totalProcessed || 0;
+  }
+
+  // Atualiza limites se disponíveis
+  if (status.limits) {
+    const limitsDiv = widget.querySelector(".igaf-limits");
+    limitsDiv.style.display = "block";
+
+    if (status.limits.daily) {
+      document.getElementById(
+        "igaf-daily-limit"
+      ).textContent = `${status.limits.daily.used}/${status.limits.daily.limit}`;
+    }
+
+    if (status.limits.hourly) {
+      document.getElementById(
+        "igaf-hourly-limit"
+      ).textContent = `${status.limits.hourly.used}/${status.limits.hourly.limit}`;
+    }
   }
 }
 
@@ -635,6 +897,7 @@ setTimeout(() => {
         pauseReason: response.pauseReason,
         pauseEndTime: response.pauseEndTime,
         stats: response.sessionStats,
+        limits: response.limits,
       });
     }
   });
@@ -682,6 +945,7 @@ const statusInterval = setInterval(() => {
             isPaused: response.isPaused,
             pauseEndTime: response.pauseEndTime,
             pauseReason: response.pauseReason,
+            limits: response.limits,
           });
 
           updateStatusWidget({
@@ -690,6 +954,7 @@ const statusInterval = setInterval(() => {
             pauseReason: response.pauseReason,
             pauseEndTime: response.pauseEndTime,
             stats: response.sessionStats,
+            limits: response.limits,
           });
         }
       });
