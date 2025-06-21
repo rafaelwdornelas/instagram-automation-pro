@@ -58,6 +58,9 @@ let settings = {
   randomClicks: true,
   randomScrolls: true,
 
+  // Stories durante pausa
+  watchStoriesDuringPause: true, // Assiste stories durante pausas
+
   // Persistência
   saveProgress: true,
   resumeOnRestart: true,
@@ -569,6 +572,12 @@ function scheduleBatchPause() {
   chrome.alarms.clear("nextAction");
   chrome.alarms.clear("resumeFromPause");
 
+  // Se habilitado, inicia visualização de stories durante a pausa
+  if (settings.watchStoriesDuringPause && automationState.currentTabId) {
+    console.log("Iniciando visualização de stories durante a pausa...");
+    startStoriesViewing();
+  }
+
   chrome.alarms.create("resumeFromPause", {
     delayInMinutes: pauseDuration / 60000,
   });
@@ -581,6 +590,124 @@ function scheduleBatchPause() {
       console.error("Falha ao criar alarme!");
     }
   });
+}
+
+/**
+ * Inicia visualização de stories durante pausa
+ */
+async function startStoriesViewing() {
+  console.log("🎬 Iniciando processo de visualização de stories...");
+
+  const maxNavigationAttempts = 5;
+  let navigationSuccess = false;
+
+  // Tenta navegar para o feed múltiplas vezes
+  for (let attempt = 1; attempt <= maxNavigationAttempts; attempt++) {
+    try {
+      console.log(`📍 Tentativa ${attempt} de navegar para o feed...`);
+
+      // Navega para o feed
+      await chrome.tabs.update(automationState.currentTabId, {
+        url: "https://www.instagram.com/",
+      });
+
+      // Aguarda mais tempo para garantir carregamento completo
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+
+      // Verifica se a navegação foi bem sucedida
+      const tab = await chrome.tabs.get(automationState.currentTabId);
+
+      if (tab.status === "complete" && tab.url.includes("instagram.com")) {
+        console.log("   ✅ Navegação para o feed bem sucedida!");
+        navigationSuccess = true;
+        break;
+      } else {
+        console.log("   ⚠️ Página ainda carregando ou URL incorreta");
+
+        // Se não for a última tentativa, recarrega a página
+        if (attempt < maxNavigationAttempts) {
+          console.log("   🔄 Recarregando página...");
+          await chrome.tabs.reload(automationState.currentTabId);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      }
+    } catch (error) {
+      console.error(`   ❌ Erro na tentativa ${attempt}:`, error);
+
+      // Aguarda antes da próxima tentativa
+      if (attempt < maxNavigationAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
+  }
+
+  if (!navigationSuccess) {
+    console.error("❌ Falha ao navegar para o feed após todas as tentativas");
+    return;
+  }
+
+  // Tenta enviar comando para assistir stories
+  const maxStoriesAttempts = 3;
+  let storiesStarted = false;
+
+  for (let attempt = 1; attempt <= maxStoriesAttempts; attempt++) {
+    try {
+      console.log(`📱 Tentativa ${attempt} de abrir stories...`);
+
+      // Calcula duração máxima (até 1 minuto antes do fim da pausa)
+      const duration = Math.min(
+        300000, // Máximo 5 minutos
+        automationState.pauseEndTime - Date.now() - 60000
+      );
+
+      if (duration <= 0) {
+        console.log("⏰ Tempo de pausa quase acabando, cancelando stories");
+        break;
+      }
+
+      // Envia comando para o content script
+      const response = await chrome.tabs.sendMessage(
+        automationState.currentTabId,
+        {
+          command: "watchStories",
+          duration: duration,
+        }
+      );
+
+      if (response && response.success) {
+        console.log("   ✅ Stories iniciados com sucesso!");
+        storiesStarted = true;
+        break;
+      } else {
+        console.log("   ⚠️ Falha ao iniciar stories:", response?.error);
+      }
+    } catch (error) {
+      console.error(`   ❌ Erro ao enviar comando de stories:`, error);
+
+      // Se for erro de conexão, tenta recarregar a página
+      if (
+        error.message &&
+        error.message.includes("connection") &&
+        attempt < maxStoriesAttempts
+      ) {
+        console.log("   🔄 Recarregando página e tentando novamente...");
+        await chrome.tabs.reload(automationState.currentTabId);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+
+    // Aguarda antes da próxima tentativa
+    if (attempt < maxStoriesAttempts && !storiesStarted) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+
+  if (!storiesStarted) {
+    console.error(
+      "❌ Falha ao iniciar visualização de stories após todas as tentativas"
+    );
+    // Continua a pausa normalmente mesmo sem stories
+  }
 }
 
 /**

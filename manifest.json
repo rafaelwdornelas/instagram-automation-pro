@@ -36,7 +36,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["styles.css"],
+      "resources": ["styles.css", "injected.js"],
       "matches": ["https://www.instagram.com/*", "https://instagram.com/*"]
     }
   ]

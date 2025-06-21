@@ -61,6 +61,46 @@ let pauseTimerInterval = null;
 
 // --- Funções Auxiliares ---
 
+// Injeta o script helper uma vez quando o content script carrega
+(function injectHelper() {
+  if (document.getElementById("igaf-helper-script")) return;
+
+  const script = document.createElement("script");
+  script.id = "igaf-helper-script";
+  script.src = chrome.runtime.getURL("injected.js");
+  script.onload = function () {
+    console.log("Helper script injetado com sucesso");
+    this.remove();
+  };
+  (document.head || document.documentElement).appendChild(script);
+})();
+
+// Função para enviar comandos para o contexto da página
+function sendPageCommand(action, data = {}) {
+  return new Promise((resolve) => {
+    const responseHandler = (event) => {
+      if (event.detail.action === action) {
+        window.removeEventListener("IGAFResponse", responseHandler);
+        resolve(event.detail.result);
+      }
+    };
+
+    window.addEventListener("IGAFResponse", responseHandler);
+
+    window.dispatchEvent(
+      new CustomEvent("IGAFCommand", {
+        detail: { action, data },
+      })
+    );
+
+    // Timeout de segurança
+    setTimeout(() => {
+      window.removeEventListener("IGAFResponse", responseHandler);
+      resolve(false);
+    }, 1000);
+  });
+}
+
 /**
  * Aguarda elemento aparecer com timeout
  */
@@ -108,7 +148,7 @@ function findActionButton(actionType) {
 
     if (actionType === "follow") {
       // Verifica se é um botão de follow
-      if (followTexts.includes(buttonText)) {
+      if (followTexts.some((text) => buttonText.includes(text))) {
         console.log(
           `Botão de follow encontrado: "${button.textContent.trim()}"`
         );
@@ -116,7 +156,7 @@ function findActionButton(actionType) {
       }
     } else if (actionType === "unfollow") {
       // Verifica se é um botão de unfollow
-      if (unfollowTexts.includes(buttonText)) {
+      if (unfollowTexts.some((text) => buttonText.includes(text))) {
         console.log(
           `Botão de unfollow encontrado: "${button.textContent.trim()}"`
         );
@@ -134,10 +174,16 @@ function findActionButton(actionType) {
     for (const div of divs) {
       const text = div.textContent.trim().toLowerCase();
 
-      if (actionType === "follow" && followTexts.includes(text)) {
+      if (
+        actionType === "follow" &&
+        followTexts.some((t) => text.includes(t))
+      ) {
         console.log(`Botão encontrado via div: "${text}"`);
         return button;
-      } else if (actionType === "unfollow" && unfollowTexts.includes(text)) {
+      } else if (
+        actionType === "unfollow" &&
+        unfollowTexts.some((t) => text.includes(t))
+      ) {
         console.log(`Botão encontrado via div: "${text}"`);
         return button;
       }
@@ -454,7 +500,7 @@ async function checkActionBlocked() {
  * Executa ação de follow/unfollow
  */
 async function performAction(actionType, username, settings) {
-  console.log(`Executando ${actionType} em @${username}`);
+  //console.log(`Executando ${actionType} em @${username}`);
 
   if (isProcessing) {
     return { status: "error", message: "Já processando outra ação" };
@@ -495,17 +541,39 @@ async function performAction(actionType, username, settings) {
     const actionButton = findActionButton(actionType);
 
     if (!actionButton) {
-      // Verifica se já está no estado desejado
-      if (
-        actionType === "follow" &&
-        document.querySelector(SELECTORS.followingButton)
-      ) {
-        return { status: "skipped", reason: "already_following" };
-      } else if (
-        actionType === "unfollow" &&
-        document.querySelector(SELECTORS.followButton)
-      ) {
-        return { status: "skipped", reason: "not_following" };
+      // Verifica se já está no estado desejado procurando pelos textos específicos
+      const allButtons = document.querySelectorAll('button[type="button"]');
+      let alreadyInState = false;
+
+      for (const button of allButtons) {
+        const text = button.textContent.trim().toLowerCase();
+        if (
+          actionType === "follow" &&
+          (text === "following" ||
+            text === "seguindo" ||
+            text === "requested" ||
+            text === "solicitado")
+        ) {
+          alreadyInState = true;
+          break;
+        } else if (
+          actionType === "unfollow" &&
+          (text === "follow" ||
+            text === "seguir" ||
+            text === "follow back" ||
+            text === "seguir de volta")
+        ) {
+          alreadyInState = true;
+          break;
+        }
+      }
+
+      if (alreadyInState) {
+        return {
+          status: "skipped",
+          reason:
+            actionType === "follow" ? "already_following" : "not_following",
+        };
       }
 
       return { status: "error", message: "Botão de ação não encontrado" };
@@ -788,9 +856,9 @@ function updateStatusWidget(status) {
  * Inicia o timer de pausa
  */
 function startPauseTimer(endTime) {
-  console.log("startPauseTimer chamado com endTime:", endTime);
-  console.log("Tempo atual:", Date.now());
-  console.log("Diferença:", endTime - Date.now(), "ms");
+  //   console.log("startPauseTimer chamado com endTime:", endTime);
+  //   console.log("Tempo atual:", Date.now());
+  //   console.log("Diferença:", endTime - Date.now(), "ms");
 
   stopPauseTimer(); // Para timer anterior se existir
 
@@ -825,7 +893,7 @@ function startPauseTimer(endTime) {
 
   updateTimer(); // Atualiza imediatamente
   pauseTimerInterval = setInterval(updateTimer, 1000);
-  console.log("Timer iniciado com interval ID:", pauseTimerInterval);
+  //console.log("Timer iniciado com interval ID:", pauseTimerInterval);
 }
 
 /**
@@ -840,7 +908,7 @@ function stopPauseTimer() {
 
 // --- Message Listener ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log("Content script recebeu:", request);
+  //console.log("Content script recebeu:", request);
 
   switch (request.command) {
     case "performAction":
@@ -874,11 +942,267 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ received: true });
       break;
 
+    case "watchStories":
+      // Executa visualização de stories
+      watchStoriesDuringPause(request.duration)
+        .then((result) => {
+          sendResponse({ success: true, result });
+        })
+        .catch((error) => {
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Async response
+
     case "ping":
       sendResponse({ pong: true });
       break;
   }
 });
+
+/**
+ * Assiste stories durante pausa
+ */
+async function watchStoriesDuringPause(maxDuration = 60000) {
+  console.log("🎬 Iniciando visualização de stories durante pausa...");
+
+  // Verifica se está no feed
+  if (
+    !window.location.pathname.includes("/") &&
+    !window.location.pathname === "/home"
+  ) {
+    console.log("📍 Não está no feed");
+    return { watched: 0, liked: 0, error: "Não está no feed" };
+  }
+
+  // Aguarda um pouco para garantir que a página carregou
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Procura stories disponíveis
+  const storyElements = document.querySelectorAll(
+    'span[role="link"][style*="74px"]'
+  );
+  if (storyElements.length <= 1) {
+    console.log("❌ Nenhum story disponível");
+    return { watched: 0, liked: 0, error: "Nenhum story disponível" };
+  }
+
+  // Clica no primeiro story (pula "Seu story")
+  const targetStory = storyElements[1];
+  const storyButton = targetStory.closest('div[role="button"]');
+
+  if (!storyButton) {
+    console.log("❌ Botão do story não encontrado");
+    return { watched: 0, liked: 0, error: "Botão não encontrado" };
+  }
+
+  // Simula comportamento humano antes de clicar
+  await simulateMouseMovement();
+  await new Promise((resolve) =>
+    setTimeout(resolve, getRandomDelay(500, 1500))
+  );
+
+  storyButton.click();
+  console.log("📱 Abrindo stories...");
+
+  // Aguarda carregar
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
+  const startTime = Date.now();
+  let storyCount = 0;
+  let likeCount = 0;
+  let lastProfile = null;
+  let isWatching = true;
+
+  // Função para curtir story usando o helper injetado
+  const likeStory = async () => {
+    console.log("likeStory solicitado");
+
+    try {
+      const result = await sendPageCommand("likeStory");
+
+      if (result) {
+        // Salva o perfil atual
+        const match = location.href.match(/instagram\.com\/stories\/([^/]+)\//);
+        if (match) lastProfile = match[1];
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Erro ao curtir story:", error);
+      return false;
+    }
+  };
+
+  // Monitora mudanças de URL para detectar novos stories
+  let currentUrl = location.href;
+  const urlObserver = new MutationObserver(() => {
+    const newUrl = location.href;
+    if (newUrl !== currentUrl) {
+      currentUrl = newUrl;
+
+      // Verifica se saiu dos stories
+      if (!newUrl.includes("/stories/")) {
+        console.log("📍 Saiu dos stories");
+        isWatching = false;
+        return;
+      }
+
+      // Extrai o perfil atual
+      const match = newUrl.match(/instagram\.com\/stories\/([^/]+)\//);
+      const newProfile = match ? match[1] : null;
+
+      // Se mudou de perfil (novo story)
+      if (newProfile && newProfile !== lastProfile) {
+        storyCount++;
+        console.log(`👤 Story #${storyCount} - Perfil: ${newProfile}`);
+        lastProfile = newProfile;
+
+        // Aguarda o story carregar e decide se vai curtir
+        setTimeout(() => {
+          if (likeStory()) {
+            likeCount++;
+            console.log(`📊 Total de curtidas: ${likeCount}`);
+          }
+        }, getRandomDelay(1000, 2000));
+      }
+    }
+  });
+
+  // Inicia o observer
+  urlObserver.observe(document, { childList: true, subtree: true });
+
+  // Curte o primeiro story (se aplicável)
+  setTimeout(() => {
+    const firstMatch = location.href.match(
+      /instagram\.com\/stories\/([^/]+)\//
+    );
+    if (firstMatch) {
+      lastProfile = firstMatch[1];
+      storyCount = 1;
+      console.log(`👤 Story #1 - Perfil: ${lastProfile}`);
+
+      if (Math.random() < 0.3) {
+        if (likeStory()) {
+          likeCount++;
+        }
+      }
+    }
+  }, 1500);
+
+  // Loop principal - apenas aguarda e avança stories
+  while (isWatching && Date.now() - startTime < maxDuration) {
+    // Tempo de visualização (3-8 segundos)
+    const viewTime = getRandomDelay(3000, 8000);
+    console.log(`⏱️ Assistindo por ${Math.round(viewTime / 1000)}s...`);
+    await new Promise((resolve) => setTimeout(resolve, viewTime));
+
+    // Verifica se ainda está nos stories
+    if (
+      !document.querySelector('div[role="presentation"]') ||
+      !location.href.includes("/stories/")
+    ) {
+      console.log("📍 Não está mais nos stories");
+      break;
+    }
+
+    // Simula comportamento humano ocasionalmente
+    if (Math.random() < 0.2) {
+      await simulateMouseMovement();
+    }
+
+    // Avança para o próximo story
+    console.log("➡️ Avançando para próximo story...");
+
+    // Procura o SVG de avançar
+    const nextSvg = document.querySelector(
+      'svg[aria-label="Avançar"], svg[aria-label="Next"]'
+    );
+
+    if (nextSvg) {
+      // Encontra o elemento clicável (geralmente o pai do SVG)
+      let clickableElement = nextSvg;
+      let parent = nextSvg.parentElement;
+
+      // Sobe na hierarquia até encontrar um elemento clicável
+      while (parent && parent !== document.body) {
+        if (
+          parent.tagName === "BUTTON" ||
+          parent.getAttribute("role") === "button" ||
+          parent.onclick !== null ||
+          parent.style.cursor === "pointer"
+        ) {
+          clickableElement = parent;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+
+      console.log("🎯 Botão de avançar encontrado");
+      clickableElement.click();
+    } else {
+      // Método alternativo: clica na área direita da tela (funciona na maioria dos casos)
+      console.log(
+        "⚠️ Botão de avançar não encontrado, usando método alternativo"
+      );
+      const presentation = document.querySelector('div[role="presentation"]');
+      if (presentation) {
+        const rect = presentation.getBoundingClientRect();
+        const clickX = rect.left + rect.width * 0.8;
+        const clickY = rect.top + rect.height / 2;
+
+        presentation.dispatchEvent(
+          new MouseEvent("click", {
+            view: window,
+            bubbles: true,
+            cancelable: true,
+            clientX: clickX,
+            clientY: clickY,
+          })
+        );
+      } else {
+        console.log("❌ Não conseguiu avançar");
+        break;
+      }
+    }
+
+    // Aguarda transição
+    await new Promise((resolve) =>
+      setTimeout(resolve, getRandomDelay(1500, 2500))
+    );
+  }
+
+  // Para o observer
+  urlObserver.disconnect();
+
+  // Fecha stories se ainda estiver aberto
+  if (location.href.includes("/stories/")) {
+    console.log("🚪 Fechando stories...");
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        keyCode: 27,
+        bubbles: true,
+      })
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  console.log(`\n✅ Visualização de stories concluída!`);
+  console.log(`📊 Estatísticas finais:`);
+  console.log(`   - Stories assistidos: ${storyCount}`);
+  console.log(`   - Stories curtidos: ${likeCount}`);
+  console.log(
+    `   - Tempo total: ${Math.round((Date.now() - startTime) / 1000)}s`
+  );
+
+  return {
+    watched: storyCount,
+    liked: likeCount,
+    duration: Date.now() - startTime,
+  };
+}
 
 // Notifica que está pronto
 console.log("Content script pronto para receber comandos");
@@ -941,12 +1265,12 @@ const statusInterval = setInterval(() => {
         }
 
         if (response && (response.isActive || response.isPaused)) {
-          console.log("Status recebido:", {
+          /*  console.log("Status recebido:", {
             isPaused: response.isPaused,
             pauseEndTime: response.pauseEndTime,
             pauseReason: response.pauseReason,
             limits: response.limits,
-          });
+          }); */
 
           updateStatusWidget({
             isActive: response.isActive,
