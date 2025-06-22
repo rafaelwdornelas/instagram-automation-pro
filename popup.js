@@ -47,6 +47,7 @@ const elements = {
   skipVerified: document.getElementById("skipVerified"),
   randomizeOrder: document.getElementById("randomizeOrder"),
   simulateHuman: document.getElementById("simulateHuman"),
+  watchStories: document.getElementById("watchStories"),
   saveSettingsBtn: document.getElementById("saveSettingsBtn"),
 
   // Reports
@@ -602,6 +603,10 @@ async function loadSettings() {
       elements.skipVerified.checked = settings.skipVerifiedProfiles;
       elements.randomizeOrder.checked = settings.randomizeOrder;
       elements.simulateHuman.checked = settings.simulateHumanBehavior;
+      if (elements.watchStories) {
+        elements.watchStories.checked =
+          settings.watchStoriesDuringPause !== false;
+      }
     }
   } catch (error) {
     console.error("Erro ao carregar configurações:", error);
@@ -634,6 +639,9 @@ async function saveSettings() {
     simulateHumanBehavior: elements.simulateHuman.checked,
     randomClicks: elements.simulateHuman.checked,
     randomScrolls: elements.simulateHuman.checked,
+    watchStoriesDuringPause: elements.watchStories
+      ? elements.watchStories.checked
+      : true,
     saveProgress: true,
     resumeOnRestart: true,
   };
