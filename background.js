@@ -74,7 +74,17 @@ let settings = {
 
   // Explorer Settings
   explorerFilters: {
-    keywords: ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"], // Palavras-chave para filtrar
+    keywords: [
+      "desbrava",
+      "dbv",
+      "club",
+      "avt",
+      "aventureiro",
+      "mda",
+      "unidade",
+      "jovens",
+      "jovem",
+    ], // Palavras-chave para filtrar
     ignoreUsers: ["lojadesbravaria"], // Usuários a ignorar
     filterEnabled: true, // Se o filtro está ativado
     minFollowers: 0, // Mínimo de seguidores (0 = sem limite)
@@ -383,8 +393,8 @@ async function extractUsersFromExplorer() {
             // Aguarda um pouco mais para garantir que o conteúdo dinâmico carregou
             setTimeout(async () => {
               try {
-                // Envia comando para extrair usuários
-                const response = await chrome.tabs.sendMessage(
+                // Primeiro tenta extrair usuários
+                let response = await chrome.tabs.sendMessage(
                   automationState.currentTabId,
                   {
                     command: "extractExplorerUsers",
@@ -392,13 +402,41 @@ async function extractUsersFromExplorer() {
                   }
                 );
 
+                // Se não encontrou usuários, tenta fazer scroll para carregar mais
+                if (
+                  !response ||
+                  !response.users ||
+                  response.users.length === 0
+                ) {
+                  console.log(
+                    "Nenhum usuário encontrado, tentando scroll para carregar mais..."
+                  );
+
+                  // Envia comando para fazer scroll
+                  await chrome.tabs.sendMessage(automationState.currentTabId, {
+                    command: "scrollExplorer",
+                  });
+
+                  // Aguarda um pouco para o conteúdo carregar
+                  await new Promise((res) => setTimeout(res, 3000));
+
+                  // Tenta extrair novamente
+                  response = await chrome.tabs.sendMessage(
+                    automationState.currentTabId,
+                    {
+                      command: "extractExplorerUsers",
+                      filters: settings.explorerFilters,
+                    }
+                  );
+                }
+
                 if (response && response.users) {
                   console.log(
                     `Extraídos ${response.users.length} usuários do Explorer`
                   );
                   resolve(response.users);
                 } else {
-                  console.error("Nenhum usuário extraído");
+                  console.error("Nenhum usuário extraído após tentativas");
                   resolve([]);
                 }
               } catch (error) {
@@ -465,7 +503,28 @@ async function processNextUser() {
 
     if (newUsers.length === 0) {
       console.log("Nenhum novo usuário encontrado no Explorer");
-      await completeAutomation();
+      console.log(
+        "🎬 Iniciando visualização de stories para aguardar atualização da lista..."
+      );
+
+      // Define uma pausa temporária para assistir stories
+      automationState.isPaused = true;
+      const storiesDuration = getRandomDelay(120000, 180000); // 2-3 minutos assistindo stories
+
+      automationState.pauseReason =
+        "Aguardando novos usuários no Explorer (assistindo stories)";
+      automationState.pauseEndTime = Date.now() + storiesDuration;
+
+      sendStatusUpdate();
+
+      // Inicia visualização de stories
+      await startStoriesViewing();
+
+      // Agenda nova tentativa após os stories
+      chrome.alarms.create("resumeFromPause", {
+        delayInMinutes: storiesDuration / 60000,
+      });
+
       return;
     }
 
@@ -482,8 +541,27 @@ async function processNextUser() {
     console.log(`${uniqueUsers.length} novos usuários únicos encontrados`);
 
     if (uniqueUsers.length === 0) {
-      console.log("Todos os usuários já foram processados");
-      await completeAutomation();
+      console.log(
+        "Todos os usuários já foram processados, aguardando atualização..."
+      );
+      console.log("🎬 Iniciando visualização de stories...");
+
+      // Mesma lógica de pausar e assistir stories
+      automationState.isPaused = true;
+      const storiesDuration = getRandomDelay(120000, 180000); // 2-3 minutos
+
+      automationState.pauseReason =
+        "Todos os usuários já processados (assistindo stories)";
+      automationState.pauseEndTime = Date.now() + storiesDuration;
+
+      sendStatusUpdate();
+
+      await startStoriesViewing();
+
+      chrome.alarms.create("resumeFromPause", {
+        delayInMinutes: storiesDuration / 60000,
+      });
+
       return;
     }
 
@@ -503,7 +581,25 @@ async function processNextUser() {
     // Se modo Explorer, tenta extrair mais usuários
     if (automationState.mode === "explorer") {
       console.log("Tentando extrair mais usuários do Explorer...");
-      scheduleNextAction(); // Agenda próxima extração
+
+      // Pausa temporária para assistir stories antes de buscar mais
+      automationState.isPaused = true;
+      const storiesDuration = getRandomDelay(120000, 180000); // 2-3 minutos
+
+      automationState.pauseReason =
+        "Lista processada, buscando mais usuários (assistindo stories)";
+      automationState.pauseEndTime = Date.now() + storiesDuration;
+
+      sendStatusUpdate();
+
+      // Inicia visualização de stories
+      await startStoriesViewing();
+
+      // Agenda retomada para buscar mais usuários
+      chrome.alarms.create("resumeFromPause", {
+        delayInMinutes: storiesDuration / 60000,
+      });
+
       return;
     }
 
@@ -544,6 +640,7 @@ async function processNextUser() {
           randomClicks: settings.randomClicks,
           randomScrolls: settings.randomScrolls,
           scrollDelay: settings.scrollDelay,
+          filters: settings.explorerFilters, // Passa os filtros para captura de sugestões
         },
       }
     );
@@ -579,6 +676,49 @@ async function handleActionResponse(username, response) {
 
       // Salva no histórico geral
       await saveToProcessedHistory(username);
+
+      // Se há sugestões capturadas e estamos no modo Explorer
+      if (
+        response.suggestions &&
+        response.suggestions.length > 0 &&
+        automationState.mode === "explorer"
+      ) {
+        console.log(
+          `📱 Processando ${response.suggestions.length} sugestões capturadas do perfil...`
+        );
+
+        // Filtra usuários já processados
+        const processedHistory = await loadProcessedHistory();
+        const newSuggestions = response.suggestions.filter(
+          (user) =>
+            !processedHistory.includes(user.toLowerCase()) &&
+            !automationState.processedUsers.some(
+              (u) => u.username.toLowerCase() === user.toLowerCase()
+            ) &&
+            !automationState.currentList.includes(user)
+        );
+
+        if (newSuggestions.length > 0) {
+          console.log(
+            `✅ Adicionando ${newSuggestions.length} novas sugestões à lista`
+          );
+          // Adiciona as sugestões ao final da lista atual
+          automationState.currentList.push(...newSuggestions);
+
+          // Se configurado para randomizar, mistura apenas as novas adições
+          if (settings.randomizeOrder) {
+            const currentProcessing = automationState.currentList.slice(
+              0,
+              automationState.currentIndex + 1
+            );
+            const remaining = automationState.currentList.slice(
+              automationState.currentIndex + 1
+            );
+            remaining.sort(() => Math.random() - 0.5);
+            automationState.currentList = [...currentProcessing, ...remaining];
+          }
+        }
+      }
 
       // Incrementa contadores de limite
       await incrementLimitCounters();
@@ -636,6 +776,7 @@ async function handleActionResponse(username, response) {
     total: automationState.sessionStats.totalProcessed,
     sucesso: automationState.sessionStats.successful,
     index: automationState.currentIndex,
+    listaTotal: automationState.currentList.length,
   });
 
   // Salva progresso

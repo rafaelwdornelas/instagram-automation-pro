@@ -677,6 +677,91 @@ async function checkActionBlocked() {
 }
 
 /**
+ * Extrai sugestões de usuários da página de perfil
+ */
+function extractProfileSuggestions(filters = {}) {
+  console.log("🔍 Extraindo sugestões da página do perfil...");
+
+  const usuarios = [];
+
+  // Função auxiliar para verificar palavras-chave
+  function contemPalavrasFiltro(texto) {
+    if (
+      !texto ||
+      !filters.filterEnabled ||
+      !filters.keywords ||
+      filters.keywords.length === 0
+    ) {
+      return true; // Se não há filtros, aceita todos
+    }
+    const textoLower = texto.toLowerCase();
+    return filters.keywords.some((palavra) =>
+      textoLower.includes(palavra.toLowerCase())
+    );
+  }
+
+  // Função auxiliar para verificar se deve ignorar usuário
+  function deveIgnorarUsuario(username) {
+    if (!filters.ignoreUsers || filters.ignoreUsers.length === 0) return false;
+    return filters.ignoreUsers.some(
+      (ignored) => username.toLowerCase() === ignored.toLowerCase()
+    );
+  }
+
+  // Seleciona todos os elementos li que contêm as informações dos usuários
+  const listaUsuarios = document.querySelectorAll("li._acaz");
+
+  listaUsuarios.forEach((item) => {
+    try {
+      // Extrai o username (@ do usuário)
+      const linkUsuario = item.querySelector('a[href^="/"]');
+      const username = linkUsuario
+        ? linkUsuario.getAttribute("href").replace(/\//g, "")
+        : null;
+
+      // Extrai o nome completo do usuário
+      const nomeCompleto = item.querySelector(
+        'span[style*="webkit-box-orient"]'
+      );
+      const nome = nomeCompleto ? nomeCompleto.textContent.trim() : null;
+
+      // Verifica se o usuário é verificado
+      const verificado =
+        item.querySelector('svg[aria-label="Verificado"]') !== null;
+
+      // Adiciona ao array apenas se tiver username e passar pelos filtros
+      if (username && !deveIgnorarUsuario(username)) {
+        // Aplica filtro de palavras-chave
+        if (filters.filterEnabled) {
+          if (!contemPalavrasFiltro(username) && !contemPalavrasFiltro(nome)) {
+            console.log(`⚠️ @${username} não contém palavras-chave`);
+            return;
+          }
+
+          // Pula verificados se configurado
+          if (filters.skipVerified && verificado) {
+            console.log(`⚠️ @${username} é verificado`);
+            return;
+          }
+        }
+
+        usuarios.push(username);
+        console.log(
+          `✅ Sugestão encontrada: @${username} - ${
+            nome || "Nome não disponível"
+          }`
+        );
+      }
+    } catch (error) {
+      console.error("Erro ao processar item:", error);
+    }
+  });
+
+  console.log(`\n📊 Total de sugestões extraídas: ${usuarios.length}`);
+  return usuarios;
+}
+
+/**
  * Executa ação de follow/unfollow
  */
 async function performAction(actionType, username, settings) {
@@ -808,10 +893,24 @@ async function performAction(actionType, username, settings) {
 
     lastActionTime = Date.now();
 
+    // Se foi follow bem-sucedido, aguarda 2 segundos e captura sugestões
+    let profileSuggestions = [];
+    if (actionType === "follow") {
+      console.log("⏳ Aguardando 2 segundos para capturar sugestões...");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Extrai sugestões usando os mesmos filtros
+      profileSuggestions = extractProfileSuggestions(settings.filters || {});
+      console.log(
+        `📱 Capturadas ${profileSuggestions.length} sugestões do perfil`
+      );
+    }
+
     return {
       status: "success",
       message: `${actionType} realizado com sucesso`,
       profileInfo,
+      suggestions: profileSuggestions,
     };
   } catch (error) {
     console.error("Erro ao executar ação:", error);
@@ -1122,6 +1221,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       }
       break;
+
+    case "scrollExplorer":
+      // Faz scroll na página do Explorer para carregar mais usuários
+      (async () => {
+        try {
+          // Scroll até o final
+          window.scrollTo({
+            top: document.body.scrollHeight,
+            behavior: "smooth",
+          });
+
+          // Aguarda um pouco
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Faz mais alguns scrolls menores
+          for (let i = 0; i < 3; i++) {
+            window.scrollBy({
+              top: 300,
+              behavior: "smooth",
+            });
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+
+          sendResponse({ success: true });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Async response
 
     case "getProfileInfo":
       sendResponse(getProfileInfo());
