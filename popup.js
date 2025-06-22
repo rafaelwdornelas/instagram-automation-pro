@@ -1,4 +1,4 @@
-// popup.js - Controlador da interface avançada
+// popup.js - Controlador da interface avançada com Explorer
 
 // Elementos DOM
 const elements = {
@@ -21,12 +21,31 @@ const elements = {
   pauseCountdown: document.getElementById("pauseCountdown"),
   pauseProgress: document.getElementById("pauseProgress"),
 
+  // Mode
+  modeCards: document.querySelectorAll(".mode-card"),
+  currentMode: document.getElementById("currentMode"),
+  modeText: document.getElementById("modeText"),
+
   // Automation
   quickList: document.getElementById("quickList"),
   savedListSelect: document.getElementById("savedListSelect"),
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
   resumeBtn: document.getElementById("resumeBtn"),
+
+  // List Options
+  listOptions: document.getElementById("listOptions"),
+
+  // Explorer Options
+  explorerOptions: document.getElementById("explorerOptions"),
+  filterEnabled: document.getElementById("filterEnabled"),
+  keywordsContainer: document.getElementById("keywordsContainer"),
+  keywordInput: document.getElementById("keywordInput"),
+  ignoreContainer: document.getElementById("ignoreContainer"),
+  ignoreInput: document.getElementById("ignoreInput"),
+  minFollowers: document.getElementById("minFollowers"),
+  maxFollowers: document.getElementById("maxFollowers"),
+  clearHistoryBtn: document.getElementById("clearHistoryBtn"),
 
   // Lists
   listName: document.getElementById("listName"),
@@ -59,12 +78,18 @@ let savedLists = {};
 let currentStatus = {};
 let automationInterval = null;
 let pauseInterval = null;
+let selectedMode = "list";
+
+// Explorer keywords e ignores
+let explorerKeywords = ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"];
+let explorerIgnores = ["lojadesbravaria"];
 
 // --- Inicialização ---
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
   await loadSavedLists();
   await loadSettings();
+  await loadExplorerSettings();
   await updateStatus();
   await checkForSavedProgress();
 
@@ -79,10 +104,33 @@ function setupEventListeners() {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
 
+  // Mode selection
+  elements.modeCards.forEach((card) => {
+    card.addEventListener("click", () => selectMode(card.dataset.mode));
+  });
+
   // Automation
   elements.startBtn.addEventListener("click", startAutomation);
   elements.stopBtn.addEventListener("click", stopAutomation);
   elements.resumeBtn.addEventListener("click", resumeAutomation);
+
+  // Explorer keywords
+  elements.keywordInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addKeyword();
+    }
+  });
+
+  elements.ignoreInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addIgnoreUser();
+    }
+  });
+
+  // Clear history
+  elements.clearHistoryBtn.addEventListener("click", clearProcessedHistory);
 
   // Lists
   elements.saveListBtn.addEventListener("click", saveList);
@@ -110,6 +158,37 @@ function setupEventListeners() {
   });
 }
 
+// --- Mode Selection ---
+function selectMode(mode) {
+  selectedMode = mode;
+
+  // Update UI
+  elements.modeCards.forEach((card) => {
+    card.classList.toggle("active", card.dataset.mode === mode);
+  });
+
+  // Show/hide options
+  elements.listOptions.style.display = mode === "list" ? "block" : "none";
+  elements.explorerOptions.classList.toggle("active", mode === "explorer");
+
+  // Update unfollow option visibility
+  const unfollowRadio = document.querySelector(
+    'input[name="actionType"][value="unfollow"]'
+  );
+  const unfollowLabel = unfollowRadio.parentElement;
+
+  if (mode === "explorer") {
+    // Esconde opção de unfollow no modo Explorer
+    unfollowLabel.style.display = "none";
+    // Força seleção de follow
+    document.querySelector(
+      'input[name="actionType"][value="follow"]'
+    ).checked = true;
+  } else {
+    unfollowLabel.style.display = "flex";
+  }
+}
+
 // --- Tab Management ---
 function switchTab(tabName) {
   elements.tabs.forEach((tab) => {
@@ -123,6 +202,138 @@ function switchTab(tabName) {
   // Carrega dados específicos da aba
   if (tabName === "reports") {
     loadReport();
+  }
+}
+
+// --- Explorer Keywords Management ---
+function addKeyword() {
+  const keyword = elements.keywordInput.value.trim().toLowerCase();
+  if (keyword && !explorerKeywords.includes(keyword)) {
+    explorerKeywords.push(keyword);
+    renderKeywords();
+    saveExplorerSettings();
+  }
+  elements.keywordInput.value = "";
+}
+
+function removeKeyword(keyword) {
+  explorerKeywords = explorerKeywords.filter((k) => k !== keyword);
+  renderKeywords();
+  saveExplorerSettings();
+}
+
+function renderKeywords() {
+  // Remove tags antigas
+  const oldTags = elements.keywordsContainer.querySelectorAll(".tag");
+  oldTags.forEach((tag) => tag.remove());
+
+  // Adiciona tags
+  explorerKeywords.forEach((keyword) => {
+    const tag = document.createElement("div");
+    tag.className = "tag";
+    tag.innerHTML = `
+      ${keyword}
+      <span class="tag-remove" onclick="removeKeyword('${keyword}')">×</span>
+    `;
+    elements.keywordsContainer.insertBefore(tag, elements.keywordInput);
+  });
+}
+
+// --- Explorer Ignore Users Management ---
+function addIgnoreUser() {
+  const user = elements.ignoreInput.value.trim().toLowerCase().replace("@", "");
+  if (user && !explorerIgnores.includes(user)) {
+    explorerIgnores.push(user);
+    renderIgnoreUsers();
+    saveExplorerSettings();
+  }
+  elements.ignoreInput.value = "";
+}
+
+function removeIgnoreUser(user) {
+  explorerIgnores = explorerIgnores.filter((u) => u !== user);
+  renderIgnoreUsers();
+  saveExplorerSettings();
+}
+
+function renderIgnoreUsers() {
+  // Remove tags antigas
+  const oldTags = elements.ignoreContainer.querySelectorAll(".tag");
+  oldTags.forEach((tag) => tag.remove());
+
+  // Adiciona tags
+  explorerIgnores.forEach((user) => {
+    const tag = document.createElement("div");
+    tag.className = "tag";
+    tag.innerHTML = `
+      @${user}
+      <span class="tag-remove" onclick="removeIgnoreUser('${user}')">×</span>
+    `;
+    elements.ignoreContainer.insertBefore(tag, elements.ignoreInput);
+  });
+}
+
+// Torna as funções globais
+window.removeKeyword = removeKeyword;
+window.removeIgnoreUser = removeIgnoreUser;
+
+// --- Explorer Settings ---
+async function loadExplorerSettings() {
+  try {
+    const response = await chrome.runtime.sendMessage({ command: "getStatus" });
+    const settings = response.settings;
+
+    if (settings && settings.explorerFilters) {
+      explorerKeywords = settings.explorerFilters.keywords || explorerKeywords;
+      explorerIgnores = settings.explorerFilters.ignoreUsers || explorerIgnores;
+      elements.filterEnabled.checked =
+        settings.explorerFilters.filterEnabled !== false;
+      elements.minFollowers.value = settings.explorerFilters.minFollowers || 0;
+      elements.maxFollowers.value = settings.explorerFilters.maxFollowers || 0;
+    }
+
+    renderKeywords();
+    renderIgnoreUsers();
+  } catch (error) {
+    console.error("Erro ao carregar configurações do Explorer:", error);
+  }
+}
+
+async function saveExplorerSettings() {
+  const explorerSettings = {
+    keywords: explorerKeywords,
+    ignoreUsers: explorerIgnores,
+    filterEnabled: elements.filterEnabled.checked,
+    minFollowers: parseInt(elements.minFollowers.value) || 0,
+    maxFollowers: parseInt(elements.maxFollowers.value) || 0,
+  };
+
+  try {
+    await chrome.runtime.sendMessage({
+      command: "updateSettings",
+      settings: {
+        explorerFilters: explorerSettings,
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao salvar configurações do Explorer:", error);
+  }
+}
+
+// --- Clear History ---
+async function clearProcessedHistory() {
+  if (
+    confirm(
+      "Tem certeza que deseja limpar o histórico de usuários já processados?\n\nIsso permitirá processar novamente usuários que já foram seguidos anteriormente."
+    )
+  ) {
+    try {
+      await chrome.runtime.sendMessage({ command: "clearProcessedHistory" });
+      alert("Histórico limpo com sucesso!");
+    } catch (error) {
+      console.error("Erro ao limpar histórico:", error);
+      alert("Erro ao limpar histórico. Verifique o console.");
+    }
   }
 }
 
@@ -164,6 +375,15 @@ async function updateStatus() {
 
     // Atualiza indicadores de limites
     updateLimitIndicators(response.limits);
+
+    // Mostra modo atual se ativo
+    if (isActive && response.mode) {
+      elements.currentMode.style.display = "inline-flex";
+      elements.modeText.textContent =
+        response.mode === "explorer" ? "Explorer" : "Lista";
+    } else {
+      elements.currentMode.style.display = "none";
+    }
 
     // Atualiza timer de pausa
     if (isPaused && response.pauseEndTime && response.pauseReason) {
@@ -331,26 +551,33 @@ function hidePauseTimer() {
 
 // --- Automation Control ---
 async function startAutomation() {
-  // Obtém lista de usernames
-  let usernames = [];
-
-  if (elements.quickList.value.trim()) {
-    // Usa lista rápida
-    usernames = elements.quickList.value
-      .split("\n")
-      .map((u) => u.trim().replace("@", ""))
-      .filter((u) => u.length > 0);
-  } else if (elements.savedListSelect.value) {
-    // Usa lista salva
-    const listName = elements.savedListSelect.value;
-    if (savedLists[listName]) {
-      usernames = savedLists[listName].usernames;
-    }
+  // Salva configurações do Explorer primeiro
+  if (selectedMode === "explorer") {
+    await saveExplorerSettings();
   }
 
-  if (usernames.length === 0) {
-    alert("Por favor, adicione usernames ou selecione uma lista salva.");
-    return;
+  // Obtém lista de usernames (se modo lista)
+  let usernames = [];
+
+  if (selectedMode === "list") {
+    if (elements.quickList.value.trim()) {
+      // Usa lista rápida
+      usernames = elements.quickList.value
+        .split("\n")
+        .map((u) => u.trim().replace("@", ""))
+        .filter((u) => u.length > 0);
+    } else if (elements.savedListSelect.value) {
+      // Usa lista salva
+      const listName = elements.savedListSelect.value;
+      if (savedLists[listName]) {
+        usernames = savedLists[listName].usernames;
+      }
+    }
+
+    if (usernames.length === 0) {
+      alert("Por favor, adicione usernames ou selecione uma lista salva.");
+      return;
+    }
   }
 
   // Obtém tipo de ação
@@ -358,13 +585,27 @@ async function startAutomation() {
     'input[name="actionType"]:checked'
   ).value;
 
+  // Configurações do Explorer
+  const explorerSettings =
+    selectedMode === "explorer"
+      ? {
+          keywords: explorerKeywords,
+          ignoreUsers: explorerIgnores,
+          filterEnabled: elements.filterEnabled.checked,
+          minFollowers: parseInt(elements.minFollowers.value) || 0,
+          maxFollowers: parseInt(elements.maxFollowers.value) || 0,
+        }
+      : null;
+
   // Envia comando para background
   try {
     await chrome.runtime.sendMessage({
       command: "startAutomation",
       data: {
+        mode: selectedMode,
         actionType,
         usernames,
+        explorerSettings,
       },
     });
 
@@ -398,13 +639,20 @@ async function checkForSavedProgress() {
     if (response && response.hasProgress) {
       const remaining = response.remaining;
       const total = response.total;
+      const mode = response.mode || "list";
 
-      console.log(`Progresso encontrado: ${remaining} de ${total} restantes`);
+      console.log(
+        `Progresso encontrado: ${remaining} de ${total} restantes (modo: ${mode})`
+      );
 
       // Mostra botão de retomar se não estiver ativo
       if (!currentStatus.isActive) {
         elements.resumeBtn.style.display = "block";
-        elements.resumeBtn.innerHTML = `<span>⏮</span> Retomar (${remaining} de ${total} restantes)`;
+        elements.resumeBtn.innerHTML = `<span>⏮</span> Retomar ${
+          mode === "explorer"
+            ? "Explorer"
+            : `(${remaining} de ${total} restantes)`
+        }`;
         console.log("Botão de retomar exibido");
       } else {
         console.log("Automação já está ativa, não mostrando botão");
@@ -603,10 +851,8 @@ async function loadSettings() {
       elements.skipVerified.checked = settings.skipVerifiedProfiles;
       elements.randomizeOrder.checked = settings.randomizeOrder;
       elements.simulateHuman.checked = settings.simulateHumanBehavior;
-      if (elements.watchStories) {
-        elements.watchStories.checked =
-          settings.watchStoriesDuringPause !== false;
-      }
+      elements.watchStories.checked =
+        settings.watchStoriesDuringPause !== false;
     }
   } catch (error) {
     console.error("Erro ao carregar configurações:", error);
@@ -639,9 +885,7 @@ async function saveSettings() {
     simulateHumanBehavior: elements.simulateHuman.checked,
     randomClicks: elements.simulateHuman.checked,
     randomScrolls: elements.simulateHuman.checked,
-    watchStoriesDuringPause: elements.watchStories
-      ? elements.watchStories.checked
-      : true,
+    watchStoriesDuringPause: elements.watchStories.checked,
     saveProgress: true,
     resumeOnRestart: true,
   };
@@ -675,6 +919,13 @@ async function loadReport() {
       elements.reportContent.innerHTML = `
                 <div class="status-card">
                     <h4>Resumo da Última Sessão</h4>
+                    <div style="margin-top: 10px; font-size: 12px; color: #fbbf24;">
+                        Modo: ${
+                          report.mode === "explorer"
+                            ? "🔍 Explorer"
+                            : "📋 Lista Personalizada"
+                        }
+                    </div>
                     <div class="stats-grid" style="margin-top: 15px;">
                         <div class="stat-item">
                             <div class="stat-value">${
@@ -726,21 +977,36 @@ async function loadReport() {
         elements.reportContent.innerHTML = `
                     <div class="status-card">
                         <h4>Sessão Atual em Andamento</h4>
+                        <div style="margin-top: 10px; font-size: 12px; color: #fbbf24;">
+                            Modo: ${
+                              status.mode === "explorer"
+                                ? "🔍 Explorer"
+                                : "📋 Lista Personalizada"
+                            }
+                        </div>
                         <div class="stats-grid" style="margin-top: 15px;">
                             <div class="stat-item">
-                                <div class="stat-value">${status.sessionStats.totalProcessed}</div>
+                                <div class="stat-value">${
+                                  status.sessionStats.totalProcessed
+                                }</div>
                                 <div class="stat-label">Total Processado</div>
                             </div>
                             <div class="stat-item">
-                                <div class="stat-value">${status.sessionStats.successful}</div>
+                                <div class="stat-value">${
+                                  status.sessionStats.successful
+                                }</div>
                                 <div class="stat-label">Sucesso</div>
                             </div>
                             <div class="stat-item">
-                                <div class="stat-value">${status.sessionStats.failed}</div>
+                                <div class="stat-value">${
+                                  status.sessionStats.failed
+                                }</div>
                                 <div class="stat-label">Falhas</div>
                             </div>
                             <div class="stat-item">
-                                <div class="stat-value">${status.sessionStats.skipped}</div>
+                                <div class="stat-value">${
+                                  status.sessionStats.skipped
+                                }</div>
                                 <div class="stat-label">Pulados</div>
                             </div>
                         </div>

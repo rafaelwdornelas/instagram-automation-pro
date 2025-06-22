@@ -102,6 +102,186 @@ function sendPageCommand(action, data = {}) {
 }
 
 /**
+ * Extrai usuários do Explorer com filtros opcionais
+ */
+function extractExplorerUsers(filters = {}) {
+  console.log("🔍 Iniciando extração de usuários do Explorer...");
+  console.log("Filtros aplicados:", filters);
+
+  const usuarios = [];
+  const links = document.querySelectorAll('a[href^="/"][role="link"]');
+
+  // Função auxiliar para verificar palavras-chave
+  function contemPalavrasFiltro(texto) {
+    if (
+      !texto ||
+      !filters.filterEnabled ||
+      !filters.keywords ||
+      filters.keywords.length === 0
+    ) {
+      return true; // Se não há filtros, aceita todos
+    }
+    const textoLower = texto.toLowerCase();
+    return filters.keywords.some((palavra) =>
+      textoLower.includes(palavra.toLowerCase())
+    );
+  }
+
+  // Função auxiliar para verificar se deve ignorar usuário
+  function deveIgnorarUsuario(username) {
+    if (!filters.ignoreUsers || filters.ignoreUsers.length === 0) return false;
+    return filters.ignoreUsers.some(
+      (ignored) => username.toLowerCase() === ignored.toLowerCase()
+    );
+  }
+
+  links.forEach((link) => {
+    try {
+      const href = link.getAttribute("href");
+
+      if (
+        href &&
+        href.startsWith("/") &&
+        !href.includes("/explore/") &&
+        !href.includes("/tags/") &&
+        !href.includes("/p/") &&
+        !href.includes("/reels/") &&
+        !href.includes("/stories/") &&
+        href.split("/").filter(Boolean).length === 1
+      ) {
+        const username = href.replace(/\//g, "");
+
+        if (deveIgnorarUsuario(username)) {
+          console.log(`⚠️ Ignorando usuário: @${username}`);
+          return;
+        }
+
+        // Navega pela estrutura DOM para encontrar o container do usuário
+        let container = link;
+        for (let i = 0; i < 10; i++) {
+          container = container.parentElement;
+          if (!container) break;
+          const divCount = container.querySelectorAll("div").length;
+          if (divCount > 5 && divCount < 50) break;
+        }
+
+        let nomeCompleto = "";
+        let botaoSeguir = null;
+        let followers = 0;
+
+        if (container) {
+          const elementos = container.querySelectorAll("*");
+
+          elementos.forEach((el) => {
+            const texto = Array.from(el.childNodes)
+              .filter((node) => node.nodeType === Node.TEXT_NODE)
+              .map((node) => node.textContent.trim())
+              .join(" ")
+              .trim();
+
+            if (
+              texto &&
+              texto !== username &&
+              !texto.includes("Seguido(a)") &&
+              !texto.includes("Sugestões") &&
+              !texto.includes("para você") &&
+              texto !== "Seguir" &&
+              texto.length > 2 &&
+              !texto.includes("verificado") &&
+              !texto.includes("seguidores")
+            ) {
+              if (!nomeCompleto || texto.length > nomeCompleto.length) {
+                nomeCompleto = texto;
+              }
+            }
+
+            // Tenta extrair número de seguidores
+            if (texto.includes("seguidores") || texto.includes("followers")) {
+              const match = texto.match(
+                /(\d+(?:\.\d+)?[KMk]?)\s*(?:seguidores|followers)/
+              );
+              if (match) {
+                const numberStr = match[1];
+                followers = parseFollowersCount(numberStr);
+              }
+            }
+          });
+
+          // Procura botão de seguir
+          const botoes = container.querySelectorAll("button");
+          botoes.forEach((btn) => {
+            const btnText = btn.textContent.trim().toLowerCase();
+            if (btnText === "seguir" || btnText === "follow") {
+              botaoSeguir = btn;
+            }
+          });
+        }
+
+        // Aplica filtros
+        if (filters.filterEnabled) {
+          // Filtro de palavras-chave
+          if (
+            !contemPalavrasFiltro(username) &&
+            !contemPalavrasFiltro(nomeCompleto)
+          ) {
+            console.log(`⚠️ @${username} não contém palavras-chave`);
+            return;
+          }
+
+          // Filtro de seguidores
+          if (filters.minFollowers > 0 && followers < filters.minFollowers) {
+            console.log(`⚠️ @${username} tem poucos seguidores: ${followers}`);
+            return;
+          }
+          if (filters.maxFollowers > 0 && followers > filters.maxFollowers) {
+            console.log(`⚠️ @${username} tem muitos seguidores: ${followers}`);
+            return;
+          }
+        }
+
+        // Adiciona usuário se tiver botão de seguir disponível
+        if (botaoSeguir) {
+          usuarios.push(username);
+          console.log(
+            `✅ Usuário encontrado: @${username} - ${
+              nomeCompleto || "Nome não disponível"
+            }`
+          );
+        } else {
+          console.log(`⚠️ @${username} não tem botão de seguir disponível`);
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao processar link:", error);
+    }
+  });
+
+  console.log(`\n📊 Total de usuários extraídos: ${usuarios.length}`);
+  return usuarios;
+}
+
+/**
+ * Converte string de seguidores para número
+ */
+function parseFollowersCount(str) {
+  if (!str) return 0;
+
+  str = str.toLowerCase().replace(/\s/g, "");
+
+  // Remove separadores de milhares
+  str = str.replace(/\./g, "").replace(/,/g, "");
+
+  // Converte K/M para números
+  if (str.includes("k")) {
+    return parseFloat(str.replace("k", "")) * 1000;
+  } else if (str.includes("m")) {
+    return parseFloat(str.replace("m", "")) * 1000000;
+  }
+
+  return parseInt(str) || 0;
+}
+
+/**
  * Aguarda elemento aparecer com timeout
  */
 function waitForElement(selector, timeout = 5000) {
@@ -748,6 +928,11 @@ function createStatusWidget() {
                     <span id="igaf-hourly-limit" style="float: right;">0/8</span>
                 </div>
             </div>
+            <div class="igaf-mode" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); display: none;">
+                <div style="font-size: 12px; opacity: 0.7;">
+                    Modo: <span id="igaf-mode-text" style="font-weight: 600;"></span>
+                </div>
+            </div>
         </div>
     `;
 
@@ -850,16 +1035,22 @@ function updateStatusWidget(status) {
       ).textContent = `${status.limits.hourly.used}/${status.limits.hourly.limit}`;
     }
   }
+
+  // Atualiza modo se disponível
+  if (status.mode) {
+    const modeDiv = widget.querySelector(".igaf-mode");
+    modeDiv.style.display = "block";
+    document.getElementById("igaf-mode-text").textContent =
+      status.mode === "explorer"
+        ? "Explorer (Sugestões)"
+        : "Lista Personalizada";
+  }
 }
 
 /**
  * Inicia o timer de pausa
  */
 function startPauseTimer(endTime) {
-  //   console.log("startPauseTimer chamado com endTime:", endTime);
-  //   console.log("Tempo atual:", Date.now());
-  //   console.log("Diferença:", endTime - Date.now(), "ms");
-
   stopPauseTimer(); // Para timer anterior se existir
 
   const updateTimer = () => {
@@ -893,7 +1084,6 @@ function startPauseTimer(endTime) {
 
   updateTimer(); // Atualiza imediatamente
   pauseTimerInterval = setInterval(updateTimer, 1000);
-  //console.log("Timer iniciado com interval ID:", pauseTimerInterval);
 }
 
 /**
@@ -922,6 +1112,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(result);
       });
       return true; // Async response
+
+    case "extractExplorerUsers":
+      try {
+        const users = extractExplorerUsers(request.filters || {});
+        sendResponse({ success: true, users });
+      } catch (error) {
+        console.error("Erro ao extrair usuários:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+      break;
 
     case "getProfileInfo":
       sendResponse(getProfileInfo());
@@ -1222,6 +1422,7 @@ setTimeout(() => {
         pauseEndTime: response.pauseEndTime,
         stats: response.sessionStats,
         limits: response.limits,
+        mode: response.mode,
       });
     }
   });
@@ -1265,13 +1466,6 @@ const statusInterval = setInterval(() => {
         }
 
         if (response && (response.isActive || response.isPaused)) {
-          /*  console.log("Status recebido:", {
-            isPaused: response.isPaused,
-            pauseEndTime: response.pauseEndTime,
-            pauseReason: response.pauseReason,
-            limits: response.limits,
-          }); */
-
           updateStatusWidget({
             isActive: response.isActive,
             isPaused: response.isPaused,
@@ -1279,6 +1473,7 @@ const statusInterval = setInterval(() => {
             pauseEndTime: response.pauseEndTime,
             stats: response.sessionStats,
             limits: response.limits,
+            mode: response.mode,
           });
         }
       });

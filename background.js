@@ -1,4 +1,4 @@
-// background.js - Sistema avançado com suporte a listas personalizadas
+// background.js - Sistema avançado com suporte a listas personalizadas e Explorer
 // Controle total de performance e navegação automática
 
 // --- Estado Global ---
@@ -8,6 +8,7 @@ let automationState = {
   pauseReason: "", // Motivo da pausa
   pauseEndTime: null, // Timestamp de quando a pausa termina
   actionType: null, // 'follow' ou 'unfollow'
+  mode: null, // 'list' ou 'explorer'
   currentTabId: null,
   currentList: [], // Lista de usernames para processar
   currentIndex: 0,
@@ -28,6 +29,12 @@ let automationState = {
   hourlyStats: {
     hour: new Date().getHours(),
     count: 0,
+  },
+  // Estado do Explorer
+  explorerState: {
+    lastExtractTime: 0,
+    extractedUsers: [],
+    currentPage: 0,
   },
 };
 
@@ -64,6 +71,15 @@ let settings = {
   // Persistência
   saveProgress: true,
   resumeOnRestart: true,
+
+  // Explorer Settings
+  explorerFilters: {
+    keywords: ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"], // Palavras-chave para filtrar
+    ignoreUsers: ["lojadesbravaria"], // Usuários a ignorar
+    filterEnabled: true, // Se o filtro está ativado
+    minFollowers: 0, // Mínimo de seguidores (0 = sem limite)
+    maxFollowers: 0, // Máximo de seguidores (0 = sem limite)
+  },
 };
 
 // --- Storage Keys ---
@@ -75,6 +91,7 @@ const STORAGE_KEYS = {
   STATS: "automationStats",
   DAILY_STATS: "dailyStats",
   HOURLY_STATS: "hourlyStats",
+  PROCESSED_USERS: "processedUsersHistory", // Histórico geral de usuários já processados
 };
 
 // --- Helper Functions ---
@@ -84,6 +101,36 @@ const STORAGE_KEYS = {
  */
 function getRandomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Carrega histórico de usuários já processados
+ */
+async function loadProcessedHistory() {
+  try {
+    const data = await chrome.storage.local.get(STORAGE_KEYS.PROCESSED_USERS);
+    return data[STORAGE_KEYS.PROCESSED_USERS] || [];
+  } catch (error) {
+    console.error("Erro ao carregar histórico:", error);
+    return [];
+  }
+}
+
+/**
+ * Salva usuário no histórico geral
+ */
+async function saveToProcessedHistory(username) {
+  try {
+    const history = await loadProcessedHistory();
+    if (!history.includes(username.toLowerCase())) {
+      history.push(username.toLowerCase());
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.PROCESSED_USERS]: history,
+      });
+    }
+  } catch (error) {
+    console.error("Erro ao salvar no histórico:", error);
+  }
 }
 
 /**
@@ -209,6 +256,7 @@ async function saveState() {
       currentIndex: automationState.currentIndex,
       processedUsers: automationState.processedUsers,
       failedUsers: automationState.failedUsers,
+      mode: automationState.mode,
       timestamp: Date.now(),
     };
 
@@ -221,6 +269,7 @@ async function saveState() {
       processedCount: automationState.processedUsers.length,
       currentIndex: automationState.currentIndex,
       totalList: automationState.currentList.length,
+      mode: automationState.mode,
       progressKey: STORAGE_KEYS.PROGRESS,
     });
   } catch (error) {
@@ -264,11 +313,13 @@ async function loadSettingsAndState() {
         automationState.currentIndex = progress.currentIndex || 0;
         automationState.processedUsers = progress.processedUsers || [];
         automationState.failedUsers = progress.failedUsers || [];
+        automationState.mode = progress.mode || "list";
 
         console.log("Progresso restaurado:", {
           lista: automationState.currentList.length,
           index: automationState.currentIndex,
           processados: automationState.processedUsers.length,
+          mode: automationState.mode,
         });
       }
     }
@@ -302,6 +353,63 @@ async function navigateToProfile(tabId, username) {
         }
       });
     });
+  });
+}
+
+/**
+ * Navega para o Explorer e extrai usuários
+ */
+async function extractUsersFromExplorer() {
+  console.log("Navegando para o Explorer...");
+
+  return new Promise((resolve) => {
+    chrome.tabs.update(
+      automationState.currentTabId,
+      {
+        url: "https://www.instagram.com/explore/people/suggested/",
+      },
+      () => {
+        // Aguarda a página carregar
+        chrome.tabs.onUpdated.addListener(function listener(
+          updatedTabId,
+          changeInfo
+        ) {
+          if (
+            updatedTabId === automationState.currentTabId &&
+            changeInfo.status === "complete"
+          ) {
+            chrome.tabs.onUpdated.removeListener(listener);
+
+            // Aguarda um pouco mais para garantir que o conteúdo dinâmico carregou
+            setTimeout(async () => {
+              try {
+                // Envia comando para extrair usuários
+                const response = await chrome.tabs.sendMessage(
+                  automationState.currentTabId,
+                  {
+                    command: "extractExplorerUsers",
+                    filters: settings.explorerFilters,
+                  }
+                );
+
+                if (response && response.users) {
+                  console.log(
+                    `Extraídos ${response.users.length} usuários do Explorer`
+                  );
+                  resolve(response.users);
+                } else {
+                  console.error("Nenhum usuário extraído");
+                  resolve([]);
+                }
+              } catch (error) {
+                console.error("Erro ao extrair usuários:", error);
+                resolve([]);
+              }
+            }, getRandomDelay(3000, 5000));
+          }
+        });
+      }
+    );
   });
 }
 
@@ -346,8 +454,59 @@ async function processNextUser() {
     return;
   }
 
+  // Se modo Explorer e lista vazia, extrai novos usuários
+  if (
+    automationState.mode === "explorer" &&
+    (automationState.currentList.length === 0 ||
+      automationState.currentIndex >= automationState.currentList.length)
+  ) {
+    console.log("Extraindo novos usuários do Explorer...");
+    const newUsers = await extractUsersFromExplorer();
+
+    if (newUsers.length === 0) {
+      console.log("Nenhum novo usuário encontrado no Explorer");
+      await completeAutomation();
+      return;
+    }
+
+    // Filtra usuários já processados
+    const processedHistory = await loadProcessedHistory();
+    const uniqueUsers = newUsers.filter(
+      (username) =>
+        !processedHistory.includes(username.toLowerCase()) &&
+        !automationState.processedUsers.some(
+          (u) => u.username.toLowerCase() === username.toLowerCase()
+        )
+    );
+
+    console.log(`${uniqueUsers.length} novos usuários únicos encontrados`);
+
+    if (uniqueUsers.length === 0) {
+      console.log("Todos os usuários já foram processados");
+      await completeAutomation();
+      return;
+    }
+
+    // Adiciona à lista
+    automationState.currentList = uniqueUsers;
+    automationState.currentIndex = 0;
+
+    // Randomiza se configurado
+    if (settings.randomizeOrder) {
+      automationState.currentList.sort(() => Math.random() - 0.5);
+    }
+  }
+
   if (automationState.currentIndex >= automationState.currentList.length) {
     console.log("Lista completa!");
+
+    // Se modo Explorer, tenta extrair mais usuários
+    if (automationState.mode === "explorer") {
+      console.log("Tentando extrair mais usuários do Explorer...");
+      scheduleNextAction(); // Agenda próxima extração
+      return;
+    }
+
     await completeAutomation();
     return;
   }
@@ -418,6 +577,9 @@ async function handleActionResponse(username, response) {
       });
       automationState.sessionStats.successful++;
 
+      // Salva no histórico geral
+      await saveToProcessedHistory(username);
+
       // Incrementa contadores de limite
       await incrementLimitCounters();
       break;
@@ -431,6 +593,11 @@ async function handleActionResponse(username, response) {
         reason: response.reason,
       });
       automationState.sessionStats.skipped++;
+
+      // Também salva no histórico para não tentar novamente
+      if (response.reason === "already_following") {
+        await saveToProcessedHistory(username);
+      }
       break;
 
     case "blocked":
@@ -720,6 +887,7 @@ async function completeAutomation() {
   const report = {
     startTime: automationState.sessionStats.started,
     endTime: Date.now(),
+    mode: automationState.mode,
     totalProcessed: automationState.sessionStats.totalProcessed,
     successful: automationState.sessionStats.successful,
     failed: automationState.sessionStats.failed,
@@ -738,7 +906,7 @@ async function completeAutomation() {
   });
 
   // Limpa estado
-  if (!settings.saveProgress) {
+  if (!settings.saveProgress || automationState.mode === "explorer") {
     automationState.currentList = [];
     automationState.currentIndex = 0;
     automationState.processedUsers = [];
@@ -755,7 +923,7 @@ async function completeAutomation() {
 }
 
 /**
- * Inicia automação com lista personalizada
+ * Inicia automação com lista personalizada ou Explorer
  */
 async function startAutomation(data) {
   if (automationState.isActive) {
@@ -763,19 +931,14 @@ async function startAutomation(data) {
     return;
   }
 
-  // Valida dados
-  if (!data.usernames || data.usernames.length === 0) {
-    console.error("Lista de usuários vazia");
-    return;
-  }
-
   // Carrega estatísticas atualizadas
   await loadStats();
 
-  // Configura estado
+  // Configura estado base
   automationState.isActive = true;
   automationState.actionType = data.actionType;
-  automationState.currentList = data.usernames;
+  automationState.mode = data.mode || "list";
+  automationState.currentList = [];
   automationState.currentIndex = 0;
   automationState.sessionStats = {
     started: Date.now(),
@@ -785,9 +948,29 @@ async function startAutomation(data) {
     skipped: 0,
   };
 
-  // Randomiza ordem se configurado
-  if (settings.randomizeOrder) {
-    automationState.currentList.sort(() => Math.random() - 0.5);
+  // Se modo lista, usa os usernames fornecidos
+  if (data.mode === "list") {
+    // Valida dados
+    if (!data.usernames || data.usernames.length === 0) {
+      console.error("Lista de usuários vazia");
+      return;
+    }
+
+    automationState.currentList = data.usernames;
+
+    // Randomiza ordem se configurado
+    if (settings.randomizeOrder) {
+      automationState.currentList.sort(() => Math.random() - 0.5);
+    }
+  }
+  // Se modo explorer, a lista será preenchida dinamicamente
+
+  // Atualiza configurações do Explorer se fornecidas
+  if (data.explorerSettings) {
+    settings.explorerFilters = {
+      ...settings.explorerFilters,
+      ...data.explorerSettings,
+    };
   }
 
   // Encontra aba do Instagram
@@ -810,9 +993,10 @@ async function startAutomation(data) {
   }
 
   console.log(
-    "Automação iniciada com",
-    automationState.currentList.length,
-    "usuários"
+    `Automação iniciada no modo ${automationState.mode}`,
+    automationState.mode === "list"
+      ? `com ${automationState.currentList.length} usuários`
+      : ""
   );
   sendStatusUpdate();
 
@@ -847,6 +1031,7 @@ function sendStatusUpdate() {
     pauseReason: automationState.pauseReason,
     pauseEndTime: automationState.pauseEndTime,
     actionType: automationState.actionType,
+    mode: automationState.mode,
     currentList: automationState.currentList.length,
     currentIndex: automationState.currentIndex,
     sessionStats: automationState.sessionStats,
@@ -928,6 +1113,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             remaining: remaining,
             total: progress.currentList.length,
             currentIndex: progress.currentIndex,
+            mode: progress.mode || "list",
           });
         } else {
           console.log("Nenhum progresso salvo no storage");
@@ -949,10 +1135,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           automationState.currentIndex = progress.currentIndex || 0;
           automationState.processedUsers = progress.processedUsers || [];
           automationState.failedUsers = progress.failedUsers || [];
+          automationState.mode = progress.mode || "list";
 
           // Verifica se há algo para retomar
           if (
-            automationState.currentIndex < automationState.currentList.length
+            automationState.currentIndex < automationState.currentList.length ||
+            automationState.mode === "explorer"
           ) {
             // Encontra aba do Instagram
             const tabs = await chrome.tabs.query({
@@ -969,7 +1157,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               console.log(
                 `Retomando do usuário ${automationState.currentIndex + 1} de ${
                   automationState.currentList.length
-                }`
+                } no modo ${automationState.mode}`
               );
 
               sendStatusUpdate();
@@ -998,6 +1186,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         pauseReason: automationState.pauseReason,
         pauseEndTime: automationState.pauseEndTime,
         actionType: automationState.actionType,
+        mode: automationState.mode,
         currentList: automationState.currentList.length,
         currentIndex: automationState.currentIndex,
         sessionStats: automationState.sessionStats,
@@ -1041,6 +1230,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(data);
       });
       return true; // Async response
+
+    case "clearProcessedHistory":
+      chrome.storage.local.remove(STORAGE_KEYS.PROCESSED_USERS, () => {
+        console.log("Histórico de usuários processados limpo");
+        sendResponse({ success: true });
+      });
+      return true;
   }
 });
 
@@ -1091,4 +1287,4 @@ setInterval(() => {
   }
 }, 5000); // Verifica a cada 5 segundos
 
-console.log("Background script carregado - Versão 2.0 Enhanced");
+console.log("Background script carregado - Versão 2.0 Enhanced with Explorer");

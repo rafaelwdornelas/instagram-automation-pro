@@ -165,6 +165,68 @@
             cursor: pointer;
         }
 
+        /* Mode Selector */
+        .mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .mode-card {
+            background: #1a1a1a;
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .mode-card:hover {
+            border-color: #555;
+            transform: translateY(-2px);
+        }
+
+        .mode-card.active {
+            border-color: #fd1d1d;
+            background: rgba(253, 29, 29, 0.1);
+        }
+
+        .mode-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .mode-card p {
+            font-size: 12px;
+            color: #888;
+        }
+
+        /* Explorer Options */
+        .explorer-options {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .explorer-options.active {
+            display: block;
+        }
+
+        .explorer-options h4 {
+            font-size: 14px;
+            margin-bottom: 15px;
+            color: #fbbf24;
+        }
+
         /* Performance Settings */
         .perf-grid {
             display: grid;
@@ -397,6 +459,54 @@
             margin: 0;
         }
 
+        /* Tag Input */
+        .tag-input-wrapper {
+            position: relative;
+        }
+
+        .tag-input {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 8px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            min-height: 44px;
+            cursor: text;
+        }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            background: #333;
+            border-radius: 15px;
+            font-size: 13px;
+        }
+
+        .tag-remove {
+            cursor: pointer;
+            font-size: 16px;
+            opacity: 0.6;
+        }
+
+        .tag-remove:hover {
+            opacity: 1;
+        }
+
+        .tag-input input {
+            flex: 1;
+            min-width: 100px;
+            border: none;
+            background: none;
+            outline: none;
+            padding: 4px;
+            font-size: 14px;
+            color: #fff;
+        }
+
         /* Warning */
         .warning {
             background: rgba(239, 68, 68, 0.1);
@@ -414,6 +524,20 @@
             font-weight: 600;
             color: #ef4444;
             margin-bottom: 8px;
+        }
+
+        /* Mode Badge */
+        .mode-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 10px;
         }
 
         /* Scrollbar */
@@ -442,7 +566,7 @@
         <div class="header">
             <div class="header-content">
                 <h1>📸 Instagram Automation Pro</h1>
-                <p>Sistema avançado com listas personalizadas</p>
+                <p>Sistema avançado com listas personalizadas e Explorer</p>
             </div>
         </div>
 
@@ -516,9 +640,29 @@
                     <div class="progress-bar">
                         <div class="progress-fill" id="progressBar" style="width: 0%"></div>
                     </div>
+
+                    <div id="currentMode" class="mode-badge" style="display: none;">
+                        <span>Modo:</span>
+                        <span id="modeText">Lista</span>
+                    </div>
                 </div>
 
-                <!-- Quick Start -->
+                <!-- Mode Selection -->
+                <div class="form-group">
+                    <label>Selecione o Modo</label>
+                    <div class="mode-selector">
+                        <div class="mode-card active" data-mode="list">
+                            <h3>📋 Lista Personalizada</h3>
+                            <p>Use uma lista específica de usuários</p>
+                        </div>
+                        <div class="mode-card" data-mode="explorer">
+                            <h3>🔍 Explorer</h3>
+                            <p>Seguir sugestões do Instagram</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Type -->
                 <div class="form-group">
                     <label>Ação</label>
                     <div class="radio-group">
@@ -533,16 +677,63 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>Lista Rápida (digite os @usernames, um por linha)</label>
-                    <textarea id="quickList" placeholder="usuario1&#10;usuario2&#10;usuario3"></textarea>
+                <!-- List Options -->
+                <div id="listOptions" class="list-options">
+                    <div class="form-group">
+                        <label>Lista Rápida (digite os @usernames, um por linha)</label>
+                        <textarea id="quickList" placeholder="usuario1&#10;usuario2&#10;usuario3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Ou selecione uma lista salva</label>
+                        <select id="savedListSelect">
+                            <option value="">-- Selecione uma lista --</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label>Ou selecione uma lista salva</label>
-                    <select id="savedListSelect">
-                        <option value="">-- Selecione uma lista --</option>
-                    </select>
+                <!-- Explorer Options -->
+                <div id="explorerOptions" class="explorer-options">
+                    <h4>⚙️ Configurações do Explorer</h4>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="filterEnabled" checked>
+                        <label for="filterEnabled">Ativar filtros de palavras-chave</label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Palavras-chave (usernames ou nomes que contenham)</label>
+                        <div class="tag-input-wrapper">
+                            <div class="tag-input" id="keywordsContainer">
+                                <input type="text" id="keywordInput" placeholder="Digite e pressione Enter">
+                            </div>
+                        </div>
+                        <small style="color: #666; font-size: 11px;">Deixe vazio para seguir todos</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Usuários a ignorar</label>
+                        <div class="tag-input-wrapper">
+                            <div class="tag-input" id="ignoreContainer">
+                                <input type="text" id="ignoreInput" placeholder="Digite e pressione Enter">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="perf-grid">
+                        <div class="form-group">
+                            <label>Mín. Seguidores</label>
+                            <input type="number" id="minFollowers" min="0" value="0" placeholder="0 = sem limite">
+                        </div>
+                        <div class="form-group">
+                            <label>Máx. Seguidores</label>
+                            <input type="number" id="maxFollowers" min="0" value="0" placeholder="0 = sem limite">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-secondary" id="clearHistoryBtn" style="width: 100%; margin-top: 10px;">
+                        🗑️ Limpar Histórico de Processados
+                    </button>
                 </div>
 
                 <button class="btn btn-primary" id="startBtn">
@@ -649,6 +840,11 @@
                 <div class="checkbox-group">
                     <input type="checkbox" id="simulateHuman" checked>
                     <label for="simulateHuman">Simular comportamento humano</label>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="watchStories" checked>
+                    <label for="watchStories">Assistir stories durante pausas</label>
                 </div>
 
                 <button class="btn btn-secondary" id="saveSettingsBtn" style="width: 100%; margin-top: 20px;">
