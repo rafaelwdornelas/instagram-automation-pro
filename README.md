@@ -1,12 +1,18 @@
 # Instagram Automation Pro - Chrome Extension
 
-Uma extensão avançada para Chrome que automatiza ações de seguir e deixar de seguir no Instagram com recursos profissionais de gerenciamento de listas, controle de performance e sistema anti-detecção.
+Uma extensão avançada para Chrome que automatiza ações de seguir e deixar de seguir no Instagram com recursos profissionais de gerenciamento de listas, modo Explorer para descoberta automática, controle de performance e sistema anti-detecção.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Chrome](https://img.shields.io/badge/chrome-extension-yellow.svg)
 
 ## 🚀 Funcionalidades Principais
+
+### 🔍 Modo Explorer (NOVO!)
+- **Descoberta Automática**: Extrai e segue usuários das sugestões do Instagram
+- **Filtros Inteligentes**: Filtre por palavras-chave, seguidores e mais
+- **Extração Contínua**: Busca novos usuários automaticamente quando a lista acaba
+- **Histórico Global**: Evita processar o mesmo usuário múltiplas vezes
 
 ### 📋 Gerenciamento de Listas Personalizadas
 - **Listas Rápidas**: Cole usernames diretamente para processamento imediato
@@ -25,6 +31,7 @@ Uma extensão avançada para Chrome que automatiza ações de seguir e deixar de
 - **Delays Variáveis**: Tempos aleatórios entre ações para parecer natural
 - **Pausas Inteligentes**: Sistema de pausas entre lotes de ações
 - **Ordem Aleatória**: Processa listas em ordem randomizada
+- **Visualização de Stories**: Assiste stories automaticamente durante pausas
 
 ### 📊 Relatórios e Estatísticas
 - **Estatísticas em Tempo Real**: Acompanhe progresso ao vivo
@@ -50,14 +57,32 @@ Uma extensão avançada para Chrome que automatiza ações de seguir e deixar de
 
 ## 🎯 Como Usar
 
-### Início Rápido
+### Modo Lista Personalizada
 
 1. **Abra o Instagram** em uma aba do Chrome
 2. **Clique no ícone da extensão** na barra de ferramentas
-3. **Configure sua automação**:
+3. **Selecione "Lista Personalizada"**
+4. **Configure sua automação**:
    - Escolha entre Seguir ou Deixar de Seguir
    - Cole uma lista de usernames ou selecione uma lista salva
    - Clique em "Iniciar Automação"
+
+### Modo Explorer (Descoberta Automática)
+
+1. **Abra o Instagram** em uma aba do Chrome
+2. **Clique no ícone da extensão**
+3. **Selecione "Explorer"**
+4. **Configure os filtros** (opcional):
+   - **Palavras-chave**: Adicione termos para filtrar usernames (ex: desbrava, club, etc)
+   - **Usuários a ignorar**: Liste usuários que não devem ser processados
+   - **Limites de seguidores**: Configure mínimo/máximo de seguidores
+5. **Clique em "Iniciar Automação"**
+
+A extensão irá automaticamente:
+- Navegar para a página de sugestões do Instagram
+- Extrair usuários que atendam aos critérios
+- Seguir um por um respeitando os limites configurados
+- Buscar mais usuários quando necessário
 
 ### Criando Listas Personalizadas
 
@@ -84,6 +109,17 @@ Uma extensão avançada para Chrome que automatiza ações de seguir e deixar de
 
 ## 🔧 Recursos Avançados
 
+### Filtros do Explorer
+- **Palavras-chave**: Filtra usuários cujos nomes contenham termos específicos
+- **Lista de ignorados**: Usuários que nunca serão processados
+- **Filtro de seguidores**: Define range de seguidores (0 = sem limite)
+- **Toggle de filtros**: Ative/desative filtros conforme necessário
+
+### Histórico de Processados
+- Mantém registro de todos os usuários já processados
+- Evita duplicações mesmo entre sessões diferentes
+- Botão para limpar histórico quando necessário
+
 ### Retomada de Sessão
 Se a automação for interrompida (fechou o navegador, atualizou a página, etc):
 1. Abra novamente a extensão
@@ -93,14 +129,17 @@ Se a automação for interrompida (fechou o navegador, atualizou a página, etc)
 ### Widget de Status
 Um widget flutuante aparece no Instagram mostrando:
 - Status atual (Ativo/Pausado/Inativo)
+- Modo de operação (Lista/Explorer)
 - Contador de tempo de pausa
 - Estatísticas da sessão atual
 - Progresso em tempo real
+- Limites diários e horários
 
 ### Sistema de Pausas
 A extensão pausa automaticamente entre lotes para evitar detecção:
 - Timer visual mostra quanto tempo falta
 - Pausas aleatórias entre o tempo mínimo e máximo configurado
+- Visualização automática de stories durante pausas
 - Retomada automática quando o tempo expira
 
 ## 📋 Requisitos
@@ -122,6 +161,7 @@ A extensão pausa automaticamente entre lotes para evitar detecção:
 - Não processa contas com autenticação de dois fatores pendente
 - Pode não funcionar durante manutenções do Instagram
 - Requer que a aba do Instagram permaneça aberta
+- Modo Explorer funciona apenas para seguir (não para deixar de seguir)
 
 ## 🛠️ Solução de Problemas
 
@@ -134,6 +174,12 @@ A extensão pausa automaticamente entre lotes para evitar detecção:
 1. Aumente os delays nas configurações
 2. Reduza o número de ações por lote
 3. Verifique se não há captcha ou verificações pendentes
+
+### Explorer não está extraindo usuários
+1. Certifique-se de estar logado no Instagram
+2. Verifique se a página de sugestões está acessível
+3. Tente desativar os filtros temporariamente
+4. Limpe o histórico de processados se necessário
 
 ### Botão não encontrado
 1. O Instagram pode ter atualizado sua interface
@@ -152,6 +198,15 @@ Contribuições são bem-vindas! Por favor:
 
 ## 📝 Changelog
 
+### v2.1.0 (2025)
+- **NOVO**: Modo Explorer para descoberta automática de usuários
+- Sistema de filtros inteligentes (palavras-chave, seguidores, etc)
+- Histórico global de usuários processados
+- Melhorias na interface com cards de seleção de modo
+- Sistema de tags para gerenciar filtros
+- Indicador visual do modo de operação
+- Botão para limpar histórico de processados
+
 ### v2.0.0 (2025)
 - Sistema completo de listas personalizadas
 - Retomada de sessão após interrupções
@@ -159,6 +214,7 @@ Contribuições são bem-vindas! Por favor:
 - Sistema de pausas com timer visual
 - Melhorias no sistema anti-detecção
 - Relatórios exportáveis em CSV
+- Visualização automática de stories durante pausas
 
 ### v1.0.0
 - Versão inicial
