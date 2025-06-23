@@ -74,17 +74,7 @@ let settings = {
 
   // Explorer Settings
   explorerFilters: {
-    keywords: [
-      "desbrava",
-      "dbv",
-      "club",
-      "avt",
-      "aventureiro",
-      "mda",
-      "unidade",
-      "jovens",
-      "jovem",
-    ], // Palavras-chave para filtrar
+    keywords: ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"], // Palavras-chave para filtrar
     ignoreUsers: ["lojadesbravaria"], // Usuários a ignorar
     filterEnabled: true, // Se o filtro está ativado
     minFollowers: 0, // Mínimo de seguidores (0 = sem limite)
@@ -962,11 +952,8 @@ async function startStoriesViewing() {
     try {
       console.log(`📱 Tentativa ${attempt} de abrir stories...`);
 
-      // Calcula duração máxima (até 1 minuto antes do fim da pausa)
-      const duration = Math.min(
-        300000, // Máximo 5 minutos
-        automationState.pauseEndTime - Date.now() - 60000
-      );
+      // Calcula duração até 15 segundos antes do fim da pausa
+      const duration = automationState.pauseEndTime - Date.now() - 15000;
 
       if (duration <= 0) {
         console.log("⏰ Tempo de pausa quase acabando, cancelando stories");

@@ -113,18 +113,28 @@ function extractExplorerUsers(filters = {}) {
 
   // Função auxiliar para verificar palavras-chave
   function contemPalavrasFiltro(texto) {
-    if (
-      !texto ||
-      !filters.filterEnabled ||
-      !filters.keywords ||
-      filters.keywords.length === 0
-    ) {
-      return true; // Se não há filtros, aceita todos
+    if (!filters.filterEnabled) {
+      return true; // Se filtro desabilitado, aceita todos
     }
+
+    if (!texto || !filters.keywords || filters.keywords.length === 0) {
+      return false; // Se filtro habilitado mas sem texto ou keywords, rejeita
+    }
+
     const textoLower = texto.toLowerCase();
-    return filters.keywords.some((palavra) =>
+    const contemPalavra = filters.keywords.some((palavra) =>
       textoLower.includes(palavra.toLowerCase())
     );
+
+    if (!contemPalavra && texto.length > 0) {
+      console.log(
+        `   ❌ "${texto}" não contém nenhuma palavra-chave: [${filters.keywords.join(
+          ", "
+        )}]`
+      );
+    }
+
+    return contemPalavra;
   }
 
   // Função auxiliar para verificar se deve ignorar usuário
@@ -1419,8 +1429,8 @@ async function watchStoriesDuringPause(maxDuration = 60000) {
 
   // Loop principal - apenas aguarda e avança stories
   while (isWatching && Date.now() - startTime < maxDuration) {
-    // Tempo de visualização (3-8 segundos)
-    const viewTime = getRandomDelay(3000, 8000);
+    // Tempo de visualização (3-6 segundos)
+    const viewTime = getRandomDelay(3000, 6000);
     console.log(`⏱️ Assistindo por ${Math.round(viewTime / 1000)}s...`);
     await new Promise((resolve) => setTimeout(resolve, viewTime));
 
@@ -1534,6 +1544,131 @@ async function watchStoriesDuringPause(maxDuration = 60000) {
 
 // Notifica que está pronto
 console.log("Content script pronto para receber comandos");
+
+// Comandos globais para debug
+window.IGAFDebug = {
+  // Lista usuários pendentes
+  listaPendentes: async function () {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        command: "getStatus",
+      });
+      if (response && response.currentList > 0) {
+        console.log(
+          `📋 USUÁRIOS PENDENTES: ${
+            response.currentList - response.currentIndex
+          } de ${response.currentList} total`
+        );
+        console.log(`   ▶️ Próximo: usuário ${response.currentIndex + 1}`);
+        console.log(`   ✅ Processados: ${response.currentIndex}`);
+        console.log(
+          `   ⏳ Restantes: ${response.currentList - response.currentIndex}`
+        );
+
+        // Solicita lista detalhada
+        const detailed = await chrome.runtime.sendMessage({
+          command: "getPendingUsers",
+        });
+        if (detailed && detailed.pending && detailed.pending.length > 0) {
+          console.log("\n📝 PRÓXIMOS USUÁRIOS A PROCESSAR:");
+          detailed.pending.forEach((user, idx) => {
+            if (idx < 10) {
+              // Mostra apenas os próximos 10
+              console.log(`   ${idx + 1}. @${user}`);
+            }
+          });
+          if (detailed.pending.length > 10) {
+            console.log(
+              `   ... e mais ${detailed.pending.length - 10} usuários`
+            );
+          }
+        }
+      } else {
+        console.log("❌ Nenhuma automação ativa ou lista vazia");
+      }
+    } catch (error) {
+      console.error("Erro ao obter lista:", error);
+    }
+  },
+
+  // Status completo
+  status: async function () {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        command: "getStatus",
+      });
+      console.log("🤖 STATUS COMPLETO DO BOT:");
+      console.log(`   • Ativo: ${response.isActive ? "SIM" : "NÃO"}`);
+      console.log(`   • Pausado: ${response.isPaused ? "SIM" : "NÃO"}`);
+      console.log(`   • Modo: ${response.mode || "N/A"}`);
+      console.log(`   • Lista atual: ${response.currentList} usuários`);
+      console.log(`   • Posição: ${response.currentIndex}`);
+      console.log(
+        `   • Pendentes: ${response.currentList - response.currentIndex}`
+      );
+      console.log("\n📊 ESTATÍSTICAS DA SESSÃO:");
+      console.log(`   • Sucesso: ${response.sessionStats?.successful || 0}`);
+      console.log(`   • Falhas: ${response.sessionStats?.failed || 0}`);
+      console.log(`   • Pulados: ${response.sessionStats?.skipped || 0}`);
+      console.log(`   • Total: ${response.sessionStats?.totalProcessed || 0}`);
+      console.log("\n📈 LIMITES:");
+      console.log(
+        `   • Diário: ${response.limits?.daily?.used || 0}/${
+          response.limits?.daily?.limit || 0
+        }`
+      );
+      console.log(
+        `   • Horário: ${response.limits?.hourly?.used || 0}/${
+          response.limits?.hourly?.limit || 0
+        }`
+      );
+    } catch (error) {
+      console.error("Erro ao obter status:", error);
+    }
+  },
+
+  // Histórico de processados
+  historico: async function () {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        command: "getProcessedHistory",
+      });
+      if (response && response.history) {
+        console.log(
+          `📜 HISTÓRICO GERAL: ${response.history.length} usuários processados no total`
+        );
+        if (response.history.length > 0) {
+          console.log("Últimos 20 processados:");
+          response.history.slice(-20).forEach((user, idx) => {
+            console.log(`   ${idx + 1}. @${user}`);
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao obter histórico:", error);
+    }
+  },
+
+  // Limpar console e mostrar comandos
+  ajuda: function () {
+    console.clear();
+    console.log("🤖 COMANDOS DISPONÍVEIS DO INSTAGRAM AUTOMATION PRO:\n");
+    console.log(
+      "📋 IGAFDebug.listaPendentes()  - Lista usuários que faltam processar"
+    );
+    console.log(
+      "📊 IGAFDebug.status()          - Mostra status completo da automação"
+    );
+    console.log(
+      "📜 IGAFDebug.historico()       - Mostra histórico de processados"
+    );
+    console.log("❓ IGAFDebug.ajuda()           - Mostra esta ajuda\n");
+    console.log("💡 Dica: Use Ctrl+L para limpar o console");
+  },
+};
+
+// Mostra comandos disponíveis ao carregar
+console.log("💡 Digite IGAFDebug.ajuda() para ver comandos disponíveis");
 
 // Cria o widget quando a página carrega
 setTimeout(() => {
