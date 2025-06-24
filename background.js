@@ -77,8 +77,6 @@ let settings = {
     keywords: ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"], // Palavras-chave para filtrar
     ignoreUsers: ["lojadesbravaria"], // Usuários a ignorar
     filterEnabled: true, // Se o filtro está ativado
-    minFollowers: 0, // Mínimo de seguidores (0 = sem limite)
-    maxFollowers: 0, // Máximo de seguidores (0 = sem limite)
   },
 };
 

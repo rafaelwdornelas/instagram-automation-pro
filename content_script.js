@@ -117,22 +117,19 @@ function extractExplorerUsers(filters = {}) {
       return true; // Se filtro desabilitado, aceita todos
     }
 
-    if (!texto || !filters.keywords || filters.keywords.length === 0) {
-      return false; // Se filtro habilitado mas sem texto ou keywords, rejeita
+    if (!filters.keywords || filters.keywords.length === 0) {
+      return true; // Se não há keywords, aceita todos quando filtro está desabilitado
+    }
+
+    // Se filtro está habilitado e há keywords, DEVE conter pelo menos uma
+    if (!texto || texto.trim() === "") {
+      return false; // Texto vazio não passa no filtro
     }
 
     const textoLower = texto.toLowerCase();
     const contemPalavra = filters.keywords.some((palavra) =>
       textoLower.includes(palavra.toLowerCase())
     );
-
-    if (!contemPalavra && texto.length > 0) {
-      console.log(
-        `   ❌ "${texto}" não contém nenhuma palavra-chave: [${filters.keywords.join(
-          ", "
-        )}]`
-      );
-    }
 
     return contemPalavra;
   }
@@ -177,7 +174,6 @@ function extractExplorerUsers(filters = {}) {
 
         let nomeCompleto = "";
         let botaoSeguir = null;
-        let followers = 0;
 
         if (container) {
           const elementos = container.querySelectorAll("*");
@@ -204,17 +200,6 @@ function extractExplorerUsers(filters = {}) {
                 nomeCompleto = texto;
               }
             }
-
-            // Tenta extrair número de seguidores
-            if (texto.includes("seguidores") || texto.includes("followers")) {
-              const match = texto.match(
-                /(\d+(?:\.\d+)?[KMk]?)\s*(?:seguidores|followers)/
-              );
-              if (match) {
-                const numberStr = match[1];
-                followers = parseFollowersCount(numberStr);
-              }
-            }
           });
 
           // Procura botão de seguir
@@ -227,33 +212,41 @@ function extractExplorerUsers(filters = {}) {
           });
         }
 
-        // Aplica filtros
-        if (filters.filterEnabled) {
-          // Filtro de palavras-chave
+        // Validação rigorosa quando filtros estão habilitados
+        if (
+          filters.filterEnabled &&
+          filters.keywords &&
+          filters.keywords.length > 0
+        ) {
+          // IMPORTANTE: Se nome não está disponível e filtro está ativo, REJEITA
           if (
-            !contemPalavrasFiltro(username) &&
-            !contemPalavrasFiltro(nomeCompleto)
+            !nomeCompleto ||
+            nomeCompleto === "Nome não disponível" ||
+            nomeCompleto.trim() === ""
           ) {
-            console.log(`⚠️ @${username} não contém palavras-chave`);
+            console.log(
+              `❌ @${username} - Nome não disponível (rejeitado com filtros ativos)`
+            );
             return;
           }
 
-          // Filtro de seguidores
-          if (filters.minFollowers > 0 && followers < filters.minFollowers) {
-            console.log(`⚠️ @${username} tem poucos seguidores: ${followers}`);
-            return;
-          }
-          if (filters.maxFollowers > 0 && followers > filters.maxFollowers) {
-            console.log(`⚠️ @${username} tem muitos seguidores: ${followers}`);
+          // Verifica se username OU nome contém palavras-chave
+          const passaFiltroUsername = contemPalavrasFiltro(username);
+          const passaFiltroNome = contemPalavrasFiltro(nomeCompleto);
+
+          if (!passaFiltroUsername && !passaFiltroNome) {
+            console.log(
+              `❌ @${username} (${nomeCompleto}) - Não contém palavras-chave`
+            );
             return;
           }
         }
 
-        // Adiciona usuário se tiver botão de seguir disponível
+        // Adiciona usuário apenas se tiver botão de seguir disponível
         if (botaoSeguir) {
           usuarios.push(username);
           console.log(
-            `✅ Usuário encontrado: @${username} - ${
+            `✅ Usuário aprovado: @${username} - ${
               nomeCompleto || "Nome não disponível"
             }`
           );
@@ -268,27 +261,6 @@ function extractExplorerUsers(filters = {}) {
 
   console.log(`\n📊 Total de usuários extraídos: ${usuarios.length}`);
   return usuarios;
-}
-
-/**
- * Converte string de seguidores para número
- */
-function parseFollowersCount(str) {
-  if (!str) return 0;
-
-  str = str.toLowerCase().replace(/\s/g, "");
-
-  // Remove separadores de milhares
-  str = str.replace(/\./g, "").replace(/,/g, "");
-
-  // Converte K/M para números
-  if (str.includes("k")) {
-    return parseFloat(str.replace("k", "")) * 1000;
-  } else if (str.includes("m")) {
-    return parseFloat(str.replace("m", "")) * 1000000;
-  }
-
-  return parseInt(str) || 0;
 }
 
 /**
@@ -696,18 +668,25 @@ function extractProfileSuggestions(filters = {}) {
 
   // Função auxiliar para verificar palavras-chave
   function contemPalavrasFiltro(texto) {
-    if (
-      !texto ||
-      !filters.filterEnabled ||
-      !filters.keywords ||
-      filters.keywords.length === 0
-    ) {
-      return true; // Se não há filtros, aceita todos
+    if (!filters.filterEnabled) {
+      return true; // Se filtro desabilitado, aceita todos
     }
+
+    if (!filters.keywords || filters.keywords.length === 0) {
+      return true; // Se não há keywords, aceita todos quando filtro está desabilitado
+    }
+
+    // Se filtro está habilitado e há keywords, DEVE conter pelo menos uma
+    if (!texto || texto.trim() === "") {
+      return false; // Texto vazio não passa no filtro
+    }
+
     const textoLower = texto.toLowerCase();
-    return filters.keywords.some((palavra) =>
+    const contemPalavra = filters.keywords.some((palavra) =>
       textoLower.includes(palavra.toLowerCase())
     );
+
+    return contemPalavra;
   }
 
   // Função auxiliar para verificar se deve ignorar usuário
@@ -741,26 +720,51 @@ function extractProfileSuggestions(filters = {}) {
 
       // Adiciona ao array apenas se tiver username e passar pelos filtros
       if (username && !deveIgnorarUsuario(username)) {
-        // Aplica filtro de palavras-chave
-        if (filters.filterEnabled) {
-          if (!contemPalavrasFiltro(username) && !contemPalavrasFiltro(nome)) {
-            console.log(`⚠️ @${username} não contém palavras-chave`);
+        // Aplica filtro de palavras-chave COM VALIDAÇÃO RIGOROSA
+        if (
+          filters.filterEnabled &&
+          filters.keywords &&
+          filters.keywords.length > 0
+        ) {
+          // IMPORTANTE: Se nome não está disponível e filtro está ativo, REJEITA
+          if (!nome || nome === "Nome não disponível" || nome.trim() === "") {
+            console.log(
+              `❌ @${username} - Nome não disponível (rejeitado com filtros ativos)`
+            );
             return;
           }
 
-          // Pula verificados se configurado
-          if (filters.skipVerified && verificado) {
-            console.log(`⚠️ @${username} é verificado`);
+          // Verifica se username OU nome contém palavras-chave
+          const passaFiltroUsername = contemPalavrasFiltro(username);
+          const passaFiltroNome = contemPalavrasFiltro(nome);
+
+          if (!passaFiltroUsername && !passaFiltroNome) {
+            console.log(
+              `❌ @${username} (${nome}) - Não contém palavras-chave`
+            );
             return;
+          }
+
+          // Log detalhado para debug
+          if (passaFiltroUsername || passaFiltroNome) {
+            const palavraEncontrada = filters.keywords.find(
+              (palavra) =>
+                username.toLowerCase().includes(palavra.toLowerCase()) ||
+                nome.toLowerCase().includes(palavra.toLowerCase())
+            );
+            console.log(
+              `✅ @${username} - ${nome} (palavra-chave: "${palavraEncontrada}")`
+            );
           }
         }
 
+        // Pula verificados se configurado
+        if (filters.skipVerified && verificado) {
+          console.log(`⚠️ @${username} é verificado`);
+          return;
+        }
+
         usuarios.push(username);
-        console.log(
-          `✅ Sugestão encontrada: @${username} - ${
-            nome || "Nome não disponível"
-          }`
-        );
       }
     } catch (error) {
       console.error("Erro ao processar item:", error);

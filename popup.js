@@ -43,8 +43,6 @@ const elements = {
   keywordInput: document.getElementById("keywordInput"),
   ignoreContainer: document.getElementById("ignoreContainer"),
   ignoreInput: document.getElementById("ignoreInput"),
-  minFollowers: document.getElementById("minFollowers"),
-  maxFollowers: document.getElementById("maxFollowers"),
   clearHistoryBtn: document.getElementById("clearHistoryBtn"),
 
   // Lists
@@ -288,8 +286,6 @@ async function loadExplorerSettings() {
       explorerIgnores = settings.explorerFilters.ignoreUsers || explorerIgnores;
       elements.filterEnabled.checked =
         settings.explorerFilters.filterEnabled !== false;
-      elements.minFollowers.value = settings.explorerFilters.minFollowers || 0;
-      elements.maxFollowers.value = settings.explorerFilters.maxFollowers || 0;
     }
 
     renderKeywords();
@@ -304,8 +300,6 @@ async function saveExplorerSettings() {
     keywords: explorerKeywords,
     ignoreUsers: explorerIgnores,
     filterEnabled: elements.filterEnabled.checked,
-    minFollowers: parseInt(elements.minFollowers.value) || 0,
-    maxFollowers: parseInt(elements.maxFollowers.value) || 0,
   };
 
   try {
@@ -592,8 +586,6 @@ async function startAutomation() {
           keywords: explorerKeywords,
           ignoreUsers: explorerIgnores,
           filterEnabled: elements.filterEnabled.checked,
-          minFollowers: parseInt(elements.minFollowers.value) || 0,
-          maxFollowers: parseInt(elements.maxFollowers.value) || 0,
         }
       : null;
 
