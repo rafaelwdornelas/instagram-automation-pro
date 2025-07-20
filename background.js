@@ -74,7 +74,15 @@ let settings = {
 
   // Explorer Settings
   explorerFilters: {
-    keywords: ["desbrava", "dbv", "club", "avt", "aventureiro", "mda"], // Palavras-chave para filtrar
+    keywords: [
+      "desbrava",
+      "dbv",
+      "clube",
+      "avt",
+      "aventureiro",
+      "mda",
+      "unidade",
+    ], // Palavras-chave para filtrar
     ignoreUsers: ["lojadesbravaria"], // Usuários a ignorar
     filterEnabled: true, // Se o filtro está ativado
   },
