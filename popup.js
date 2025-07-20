@@ -154,6 +154,27 @@ function setupEventListeners() {
       elements.navDelayMin.value = parseInt(elements.navDelayMax.value) - 1;
     }
   });
+
+  // ADIÇÃO: Listener para remover palavras-chave
+  elements.keywordsContainer.addEventListener("click", (e) => {
+    // Verifica se o clique foi no elemento 'span' com a classe 'tag-remove'
+    if (e.target && e.target.classList.contains("tag-remove")) {
+      const keywordToRemove = e.target.dataset.keyword;
+      if (keywordToRemove) {
+        removeKeyword(keywordToRemove);
+      }
+    }
+  });
+
+  // ADIÇÃO: Listener para remover usuários ignorados (aplicando a mesma correção)
+  elements.ignoreContainer.addEventListener("click", (e) => {
+    if (e.target && e.target.classList.contains("tag-remove")) {
+      const userToRemove = e.target.dataset.user;
+      if (userToRemove) {
+        removeIgnoreUser(userToRemove);
+      }
+    }
+  });
 }
 
 // --- Mode Selection ---
@@ -221,17 +242,19 @@ function removeKeyword(keyword) {
 }
 
 function renderKeywords() {
-  // Remove tags antigas
-  const oldTags = elements.keywordsContainer.querySelectorAll(".tag");
-  oldTags.forEach((tag) => tag.remove());
+  // Limpa as tags antigas, mantendo o input
+  elements.keywordsContainer
+    .querySelectorAll(".tag")
+    .forEach((tag) => tag.remove());
 
-  // Adiciona tags
+  // Adiciona as tags com o atributo data-keyword
   explorerKeywords.forEach((keyword) => {
     const tag = document.createElement("div");
     tag.className = "tag";
+    // ATUALIZAÇÃO: Trocamos onclick por data-keyword e adicionamos um cursor
     tag.innerHTML = `
       ${keyword}
-      <span class="tag-remove" onclick="removeKeyword('${keyword}')">×</span>
+      <span class="tag-remove" data-keyword="${keyword}" style="cursor: pointer;">×</span>
     `;
     elements.keywordsContainer.insertBefore(tag, elements.keywordInput);
   });
@@ -255,25 +278,23 @@ function removeIgnoreUser(user) {
 }
 
 function renderIgnoreUsers() {
-  // Remove tags antigas
-  const oldTags = elements.ignoreContainer.querySelectorAll(".tag");
-  oldTags.forEach((tag) => tag.remove());
+  // Limpa as tags antigas, mantendo o input
+  elements.ignoreContainer
+    .querySelectorAll(".tag")
+    .forEach((tag) => tag.remove());
 
-  // Adiciona tags
+  // Adiciona as tags com o atributo data-user
   explorerIgnores.forEach((user) => {
     const tag = document.createElement("div");
     tag.className = "tag";
+    // ATUALIZAÇÃO: Trocamos onclick por data-user e adicionamos um cursor
     tag.innerHTML = `
       @${user}
-      <span class="tag-remove" onclick="removeIgnoreUser('${user}')">×</span>
+      <span class="tag-remove" data-user="${user}" style="cursor: pointer;">×</span>
     `;
     elements.ignoreContainer.insertBefore(tag, elements.ignoreInput);
   });
 }
-
-// Torna as funções globais
-window.removeKeyword = removeKeyword;
-window.removeIgnoreUser = removeIgnoreUser;
 
 // --- Explorer Settings ---
 async function loadExplorerSettings() {
